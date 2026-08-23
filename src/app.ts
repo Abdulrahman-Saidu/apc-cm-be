@@ -7,6 +7,7 @@ import { errorHandler, notFoundHandler } from '@/middleware/errorHandler';
 import { dashboardAuthRouter } from '@/modules/dashboard-auth/routes';
 import { mobileAuthRouter } from '@/modules/mobile-auth/routes';
 import { mobileRegistrationsRouter } from '@/modules/mobile-registrations/routes';
+import { dashboardOpsRouter } from '@/modules/dashboard-ops/routes';
 
 export const app = express();
 
@@ -25,6 +26,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api/dashboard/auth', dashboardAuthRouter);
 app.use('/api/mobile/auth', mobileAuthRouter);
 app.use('/api/mobile/registrations', mobileRegistrationsRouter);
+app.use('/api/dashboard', dashboardOpsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
