@@ -1,10 +1,11 @@
+import crypto from 'node:crypto';
 import { supabase } from '@/config/supabase';
 import { brevoClient } from '@/config/brevo';
 import { env } from '@/config/env';
 import { AppError } from '@/middleware/errorHandler';
 import { hashPassword, comparePassword } from '@/utils/password';
 import { generateOtpCode, hashOtp, verifyOtp, otpExpiryDate, isOtpExpired } from '@/utils/otp';
-import { signToken } from '@/utils/jwt';
+import { signToken, signResetToken, verifyResetToken } from '@/utils/jwt';
 import { AdminUserRow } from '@/types/db';
 
 const MAX_OTP_ATTEMPTS = 5;
@@ -12,6 +13,12 @@ const TABLE = 'admin_users';
 
 async function findByEmail(email: string): Promise<AdminUserRow | null> {
   const { data, error } = await supabase.from(TABLE).select('*').eq('email', email).maybeSingle();
+  if (error) throw new AppError('Something went wrong. Please try again.', 500);
+  return data;
+}
+
+async function findById(id: string): Promise<AdminUserRow | null> {
+  const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).maybeSingle();
   if (error) throw new AppError('Something went wrong. Please try again.', 500);
   return data;
 }
@@ -48,7 +55,7 @@ export const dashboardAuthService = {
     if (existing) {
       const { data, error } = await supabase
         .from(TABLE)
-        .update({ full_name: input.fullName, password_hash })
+        .update({ full_name: input.fullName, password_hash, role: 'super_admin' })
         .eq('id', existing.id)
         .select()
         .single();
@@ -57,7 +64,7 @@ export const dashboardAuthService = {
     } else {
       const { data, error } = await supabase
         .from(TABLE)
-        .insert({ email, full_name: input.fullName, password_hash })
+        .insert({ email, full_name: input.fullName, password_hash, role: 'super_admin' })
         .select()
         .single();
       if (error || !data) throw new AppError('Something went wrong. Please try again.', 500);
@@ -95,7 +102,14 @@ export const dashboardAuthService = {
 
     const { data: verified, error } = await supabase
       .from(TABLE)
-      .update({ is_verified: true, otp_code_hash: null, otp_purpose: null, otp_expires_at: null, otp_attempts: 0 })
+      .update({
+        is_verified: true,
+        invite_status: 'registered',
+        otp_code_hash: null,
+        otp_purpose: null,
+        otp_expires_at: null,
+        otp_attempts: 0,
+      })
       .eq('id', admin.id)
       .select()
       .single();
@@ -125,7 +139,7 @@ export const dashboardAuthService = {
     return { message: 'If an account exists for this email, a code has been sent.' };
   },
 
-  async resetPassword(email: string, code: string, newPassword: string) {
+  async verifyResetOtp(email: string, code: string) {
     const admin = await findByEmail(email.toLowerCase());
     if (!admin || !admin.otp_code_hash || admin.otp_purpose !== 'RESET_PASSWORD') {
       throw new AppError('Invalid reset request', 400);
@@ -141,13 +155,92 @@ export const dashboardAuthService = {
       throw new AppError('Incorrect code', 400);
     }
 
-    const password_hash = await hashPassword(newPassword);
-    const { error } = await supabase
+    await supabase
       .from(TABLE)
-      .update({ password_hash, otp_code_hash: null, otp_purpose: null, otp_expires_at: null, otp_attempts: 0 })
+      .update({ otp_code_hash: null, otp_purpose: null, otp_expires_at: null, otp_attempts: 0 })
       .eq('id', admin.id);
+
+    const resetToken = signResetToken({ sub: admin.id, email: admin.email });
+    return { resetToken };
+  },
+
+  async resetPassword(resetToken: string, newPassword: string) {
+    let payload;
+    try {
+      payload = verifyResetToken(resetToken);
+    } catch {
+      throw new AppError('Reset session expired or invalid. Please start over.', 401);
+    }
+
+    const admin = await findById(payload.sub);
+    if (!admin) throw new AppError('Reset session expired or invalid. Please start over.', 401);
+
+    const password_hash = await hashPassword(newPassword);
+    const { error } = await supabase.from(TABLE).update({ password_hash }).eq('id', admin.id);
     if (error) throw new AppError('Something went wrong. Please try again.', 500);
 
     return { message: 'Password reset successfully' };
+  },
+
+  // Super admin invites a new dashboard admin.
+  async inviteAdmin(inviterId: string, input: { fullName: string; email: string; phone: string; role: 'admin' }) {
+    const email = input.email.toLowerCase();
+
+    const existing = await findByEmail(email);
+    if (existing?.is_verified) {
+      throw new AppError('This email already belongs to a registered admin.', 409);
+    }
+    if (existing?.invite_status === 'pending') {
+      throw new AppError('An invite is already pending for this email.', 409);
+    }
+
+    const inviteToken = crypto.randomBytes(24).toString('hex');
+
+    const { error } = await supabase.from(TABLE).insert({
+      email,
+      full_name: input.fullName,
+      phone: input.phone,
+      role: input.role,
+      invite_token: inviteToken,
+      invite_status: 'pending',
+      invited_by: inviterId,
+      invited_at: new Date().toISOString(),
+    });
+    if (error) throw new AppError('Something went wrong sending the invite. Please try again.', 500);
+
+    const inviter = await findById(inviterId);
+    const inviteLink = `${env.clientOrigin}/register?invite=${inviteToken}&email=${encodeURIComponent(email)}`;
+    await brevoClient.sendInviteEmail(email, input.fullName, inviteLink, inviter?.full_name ?? 'The super admin');
+
+    return { email, inviteSent: true };
+  },
+
+  // Invitee completes their registration using the token from the invite email.
+  async registerInvite(input: { token: string; fullName: string; email: string; phone: string; password: string }) {
+    const email = input.email.toLowerCase();
+    const { data: admin, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('invite_token', input.token)
+      .eq('email', email)
+      .eq('invite_status', 'pending')
+      .maybeSingle();
+    if (error) throw new AppError('Something went wrong. Please try again.', 500);
+    if (!admin) throw new AppError('This invite link is invalid or has already been used.', 400);
+
+    const password_hash = await hashPassword(input.password);
+    const { error: updateError } = await supabase
+      .from(TABLE)
+      .update({
+        full_name: input.fullName,
+        phone: input.phone,
+        password_hash,
+        invite_token: null, // consumed — can't be reused
+      })
+      .eq('id', admin.id);
+    if (updateError) throw new AppError('Something went wrong. Please try again.', 500);
+
+    await issueOtp(admin.id, email, input.fullName, 'REGISTER');
+    return { email };
   },
 };

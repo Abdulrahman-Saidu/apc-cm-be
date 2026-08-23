@@ -29,6 +29,26 @@ class BrevoClient {
 
     await this.api.sendTransacEmail(email);
   }
+
+  async sendInviteEmail(to: string, name: string, inviteLink: string, inviterName: string) {
+    const email = new SibApiV3Sdk.SendSmtpEmail();
+
+    email.sender = { email: env.brevo.senderEmail, name: env.brevo.senderName };
+    email.to = [{ email: to, name }];
+    email.subject = `You've been invited to the ${env.brevo.senderName} dashboard`;
+    email.htmlContent = `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2>You've been invited</h2>
+        <p>Hi ${name},</p>
+        <p>${inviterName} has invited you to join the dashboard as an admin.</p>
+        <p><a href="${inviteLink}" style="display:inline-block;background:#0f172a;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;">Complete your registration</a></p>
+        <p>If the button doesn't work, copy and paste this link into your browser:</p>
+        <p style="word-break:break-all;color:#64748B;">${inviteLink}</p>
+      </div>
+    `;
+
+    await this.api.sendTransacEmail(email);
+  }
 }
 
 export const brevoClient = new BrevoClient();
