@@ -3,15 +3,17 @@ import { dashboardOpsController } from './controller';
 import { validateBody, validateQuery } from '@/middleware/validate';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { requireAuth } from '@/middleware/requireAuth';
-import { queueQuerySchema, rejectSchema, registryQuerySchema } from './schemas';
+import { adminActionLimiter } from '@/middleware/rateLimit';
+import { queueQuerySchema, rejectSchema, registryQuerySchema, agentsQuerySchema } from './schemas';
 
 export const dashboardOpsRouter = Router();
 
 dashboardOpsRouter.use(requireAuth('admin'));
+dashboardOpsRouter.use(adminActionLimiter);
 
 dashboardOpsRouter.get('/overview', asyncHandler(dashboardOpsController.overview));
 
-dashboardOpsRouter.get('/agents', asyncHandler(dashboardOpsController.listAgents));
+dashboardOpsRouter.get('/agents', validateQuery(agentsQuerySchema), asyncHandler(dashboardOpsController.listAgents));
 dashboardOpsRouter.patch('/agents/:id/activate', asyncHandler(dashboardOpsController.activateAgent));
 dashboardOpsRouter.patch('/agents/:id/deactivate', asyncHandler(dashboardOpsController.deactivateAgent));
 

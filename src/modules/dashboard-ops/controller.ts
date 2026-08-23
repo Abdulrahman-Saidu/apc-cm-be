@@ -7,9 +7,10 @@ export const dashboardOpsController = {
     res.status(200).json(data);
   },
 
-  async listAgents(_req: Request, res: Response) {
-    const data = await dashboardOpsService.listAgents();
-    res.status(200).json({ data });
+  async listAgents(req: Request, res: Response) {
+    const { page, pageSize } = req.query as any;
+    const result = await dashboardOpsService.listAgents({ page, pageSize });
+    res.status(200).json(result);
   },
 
   async activateAgent(req: Request, res: Response) {
@@ -23,9 +24,9 @@ export const dashboardOpsController = {
   },
 
   async listQueue(req: Request, res: Response) {
-    const status = (req.query.status as any) ?? 'pending';
-    const data = await dashboardOpsService.listQueue(status);
-    res.status(200).json({ data });
+    const { status, page, pageSize } = req.query as any;
+    const result = await dashboardOpsService.listQueue(status ?? 'pending', { page, pageSize });
+    res.status(200).json(result);
   },
 
   async approve(req: Request, res: Response) {
@@ -39,13 +40,13 @@ export const dashboardOpsController = {
   },
 
   async listRegistry(req: Request, res: Response) {
-    const { homeAddress, state, lga } = req.query as { homeAddress?: string; state?: string; lga?: string };
-    const data = await dashboardOpsService.listRegistry({ homeAddress, state, lga });
-    res.status(200).json({ data });
+    const { homeAddress, state, lga, page, pageSize } = req.query as any;
+    const result = await dashboardOpsService.listRegistry({ homeAddress, state, lga }, { page, pageSize });
+    res.status(200).json(result);
   },
 
   async exportRegistry(req: Request, res: Response) {
-    const { homeAddress, state, lga } = req.query as { homeAddress?: string; state?: string; lga?: string };
+    const { homeAddress, state, lga } = req.query as any;
     const csv = await dashboardOpsService.exportRegistryCsv({ homeAddress, state, lga });
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="registry-export.csv"');

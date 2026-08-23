@@ -36,6 +36,16 @@ async function issueOtp(adminId: string, email: string, fullName: string, purpos
   await brevoClient.sendOtpEmail(email, fullName, code, purpose);
 }
 
+// Guarded increment — only increments if otp_attempts still matches what we last read,
+// so two concurrent wrong-code submissions can't both land and silently double-count.
+async function incrementOtpAttempts(adminId: string, currentAttempts: number) {
+  await supabase
+    .from(TABLE)
+    .update({ otp_attempts: currentAttempts + 1 })
+    .eq('id', adminId)
+    .eq('otp_attempts', currentAttempts);
+}
+
 export const dashboardAuthService = {
   async register(input: { fullName: string; email: string; password: string }) {
     const email = input.email.toLowerCase();
@@ -96,7 +106,7 @@ export const dashboardAuthService = {
 
     const valid = await verifyOtp(code, admin.otp_code_hash);
     if (!valid) {
-      await supabase.from(TABLE).update({ otp_attempts: admin.otp_attempts + 1 }).eq('id', admin.id);
+      await incrementOtpAttempts(admin.id, admin.otp_attempts);
       throw new AppError('Incorrect code', 400);
     }
 
@@ -151,7 +161,7 @@ export const dashboardAuthService = {
 
     const valid = await verifyOtp(code, admin.otp_code_hash);
     if (!valid) {
-      await supabase.from(TABLE).update({ otp_attempts: admin.otp_attempts + 1 }).eq('id', admin.id);
+      await incrementOtpAttempts(admin.id, admin.otp_attempts);
       throw new AppError('Incorrect code', 400);
     }
 
@@ -195,18 +205,38 @@ export const dashboardAuthService = {
     }
 
     const inviteToken = crypto.randomBytes(24).toString('hex');
+    const invited_at = new Date().toISOString();
 
-    const { error } = await supabase.from(TABLE).insert({
-      email,
-      full_name: input.fullName,
-      phone: input.phone,
-      role: input.role,
-      invite_token: inviteToken,
-      invite_status: 'pending',
-      invited_by: inviterId,
-      invited_at: new Date().toISOString(),
-    });
-    if (error) throw new AppError('Something went wrong sending the invite. Please try again.', 500);
+    // Row may already exist in an incomplete state (e.g. someone started /register
+    // but never verified, or an old invite expired/was consumed differently).
+    // Update that row instead of inserting, which would violate the unique email constraint.
+    if (existing) {
+      const { error } = await supabase
+        .from(TABLE)
+        .update({
+          full_name: input.fullName,
+          phone: input.phone,
+          role: input.role,
+          invite_token: inviteToken,
+          invite_status: 'pending',
+          invited_by: inviterId,
+          invited_at,
+        })
+        .eq('id', existing.id);
+      if (error) throw new AppError('Something went wrong sending the invite. Please try again.', 500);
+    } else {
+      const { error } = await supabase.from(TABLE).insert({
+        email,
+        full_name: input.fullName,
+        phone: input.phone,
+        role: input.role,
+        invite_token: inviteToken,
+        invite_status: 'pending',
+        invited_by: inviterId,
+        invited_at,
+      });
+      if (error) throw new AppError('Something went wrong sending the invite. Please try again.', 500);
+    }
 
     const inviter = await findById(inviterId);
     const inviteLink = `${env.clientOrigin}/register?invite=${inviteToken}&email=${encodeURIComponent(email)}`;
@@ -216,20 +246,14 @@ export const dashboardAuthService = {
   },
 
   // Invitee completes their registration using the token from the invite email.
+  // The update itself is the atomicity guard: invite_token is nulled in the same
+  // statement that matches on it, so two concurrent submissions with the same
+  // token can't both succeed — the second finds zero matching rows.
   async registerInvite(input: { token: string; fullName: string; email: string; phone: string; password: string }) {
     const email = input.email.toLowerCase();
-    const { data: admin, error } = await supabase
-      .from(TABLE)
-      .select('*')
-      .eq('invite_token', input.token)
-      .eq('email', email)
-      .eq('invite_status', 'pending')
-      .maybeSingle();
-    if (error) throw new AppError('Something went wrong. Please try again.', 500);
-    if (!admin) throw new AppError('This invite link is invalid or has already been used.', 400);
-
     const password_hash = await hashPassword(input.password);
-    const { error: updateError } = await supabase
+
+    const { data: admin, error } = await supabase
       .from(TABLE)
       .update({
         full_name: input.fullName,
@@ -237,8 +261,14 @@ export const dashboardAuthService = {
         password_hash,
         invite_token: null, // consumed — can't be reused
       })
-      .eq('id', admin.id);
-    if (updateError) throw new AppError('Something went wrong. Please try again.', 500);
+      .eq('invite_token', input.token)
+      .eq('email', email)
+      .eq('invite_status', 'pending')
+      .select()
+      .maybeSingle();
+
+    if (error) throw new AppError('Something went wrong. Please try again.', 500);
+    if (!admin) throw new AppError('This invite link is invalid or has already been used.', 400);
 
     await issueOtp(admin.id, email, input.fullName, 'REGISTER');
     return { email };

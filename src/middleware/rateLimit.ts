@@ -23,3 +23,11 @@ export const otpRequestLimiter = rateLimit({
   legacyHeaders: false,
   message: { message: 'Too many requests. Please wait before trying again.' },
 });
+
+export const adminActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300, // generous — this covers normal dashboard usage (polling overview, browsing queue, etc.)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many requests. Please slow down.' },
+});
