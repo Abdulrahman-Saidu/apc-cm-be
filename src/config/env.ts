@@ -22,7 +22,7 @@ export const env = {
   jwtSecret: required('JWT_SECRET'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   otpExpiresMinutes: Number(process.env.OTP_EXPIRES_MINUTES ?? 10),
-
+  agentAppPlaystoreUrl: required('AGENT_APP_PLAYSTORE_URL'),
   superAdminEmail: required('SUPER_ADMIN_EMAIL').toLowerCase(),
 
   brevo: {
