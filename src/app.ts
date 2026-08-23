@@ -9,6 +9,11 @@ import { mobileAuthRouter } from '@/modules/mobile-auth/routes';
 
 export const app = express();
 
+// Render (and most hosts) sit behind a reverse proxy — trust its X-Forwarded-For
+// header so express-rate-limit can correctly identify the real client IP instead
+// of throwing on it.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors({ origin: env.clientOrigin, credentials: true }));
 app.use(express.json());
