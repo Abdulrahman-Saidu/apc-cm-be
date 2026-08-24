@@ -129,10 +129,10 @@ export const mobileAuthService = {
     return { verified: true };
   },
 
-  async login(email: string, password: string, deviceId?: string) {
+  async login(email: string, password: string) {
     const { data: agent, error } = await supabase
       .from('agent_users')
-      .select('id, full_name, email, password_hash, is_active, device_id, agent_code, role, lga')
+      .select('id, full_name, email, password_hash, is_active, agent_code, role, lga, phone')
       .eq('email', email)
       .maybeSingle();
 
@@ -142,17 +142,6 @@ export const mobileAuthService = {
 
     const valid = await comparePassword(password, agent.password_hash);
     if (!valid) throw new AppError('Invalid email or password', 401);
-
-    if (deviceId) {
-      if (!agent.device_id) {
-        await supabase
-          .from('agent_users')
-          .update({ device_id: deviceId, bound_at: new Date().toISOString() })
-          .eq('id', agent.id);
-      } else if (agent.device_id !== deviceId) {
-        throw new AppError('This account is bound to a different device. Contact your admin.', 403);
-      }
-    }
 
     const token = signToken({ sub: agent.id, role: 'agent', email: agent.email });
 
@@ -164,6 +153,7 @@ export const mobileAuthService = {
         fullName: agent.full_name,
         email: agent.email,
         lga: agent.lga,
+        phone: agent.phone,
         role: agent.role,
       },
     };

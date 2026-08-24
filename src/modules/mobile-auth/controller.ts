@@ -23,7 +23,7 @@ export const mobileAuthController = {
   },
 
   async login(req: Request, res: Response) {
-    const result = await mobileAuthService.login(req.body.email, req.body.password, req.body.deviceId);
+    const result = await mobileAuthService.login(req.body.email, req.body.password);
     res.status(200).json({ message: 'Login successful', ...result });
   },
 
