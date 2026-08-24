@@ -24,17 +24,17 @@ function toRow(agentId: string, data: RegistrationInput) {
     full_name: data.fullName,
     phone: data.phone,
     email: data.email ?? null,
-    nin: data.nin,
-    bvn: data.bvn,
+    nin: data.nin ?? null,
+    bvn: data.bvn ?? null,
     e_reg_number: data.eRegNumber ?? null,
     vin: data.vin ?? null,
     home_address: data.homeAddress,
     state: data.state,
     lga: data.lga,
-    ward: data.ward,
-    account_number: data.accountNumber,
-    bank_name: data.bankName,
-    account_name: data.accountName,
+    ward: data.ward ?? null,
+    account_number: data.accountNumber ?? null,
+    bank_name: data.bankName ?? null,
+    account_name: data.accountName ?? null,
   };
 }
 

@@ -4,17 +4,17 @@ const registrationFields = {
   fullName: z.string().min(2),
   phone: z.string().min(7),
   email: z.string().email().optional(),
-  nin: z.string().min(5),
-  bvn: z.string().min(5),
+  nin: z.string().min(5).optional(),
+  bvn: z.string().min(5).optional(),
   eRegNumber: z.string().optional(),
   vin: z.string().optional(),
   homeAddress: z.string().min(3),
   state: z.string().min(2),
   lga: z.string().min(2),
-  ward: z.string().min(1),
-  accountNumber: z.string().min(5),
-  bankName: z.string().min(2),
-  accountName: z.string().min(2),
+  ward: z.string().min(1).optional(),
+  accountNumber: z.string().min(5).optional(),
+  bankName: z.string().min(2).optional(),
+  accountName: z.string().min(2).optional(),
 };
 
 export const createRegistrationSchema = z.object(registrationFields);
