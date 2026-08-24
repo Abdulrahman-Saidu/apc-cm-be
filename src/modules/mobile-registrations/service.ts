@@ -99,7 +99,7 @@ export const mobileRegistrationsService = {
   async listMine(agentId: string, status: 'pending' | 'approved' | 'rejected' | 'all') {
     let query = supabase
       .from('registrations')
-      .select('id, reg_number, full_name, status, rejection_reason, created_at')
+      .select('id, reg_number, full_name, phone, home_address, state, lga, email, nin, bvn, e_reg_number, vin, ward, account_number, bank_name, account_name, status, rejection_reason, created_at')
       .eq('agent_id', agentId)
       .order('created_at', { ascending: false });
 
