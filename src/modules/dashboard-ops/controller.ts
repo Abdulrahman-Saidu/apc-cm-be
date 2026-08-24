@@ -23,6 +23,11 @@ export const dashboardOpsController = {
     res.status(200).json({ message: 'Agent deactivated', ...result });
   },
 
+  async resetAgentDevice(req: Request, res: Response) {
+    const result = await dashboardOpsService.resetAgentDevice(req.params.id);
+    res.status(200).json({ message: 'Device binding reset', ...result });
+  },
+
   async listQueue(req: Request, res: Response) {
     const { status, page, pageSize } = req.query as any;
     const result = await dashboardOpsService.listQueue(status ?? 'pending', { page, pageSize });
