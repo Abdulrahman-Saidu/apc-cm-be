@@ -7,24 +7,100 @@ export type RegistrationInput = {
   homeAddress: string;
   state: string;
   lga: string;
+
+  email?: string;
+  nin?: string;
+  bvn?: string;
+  eRegNumber?: string;
+  vin?: string;
+  ward?: string;
+  accountNumber?: string;
+  bankName?: string;
+  accountName?: string;
 };
 
 type SyncRegistrationInput = RegistrationInput & {
   localId: string;
 };
 
-function toRow(agentId: string, data: RegistrationInput) {
+function toNullable(
+  value?: string
+): string | null {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed : null;
+}
+
+function toRow(
+  agentId: string,
+  data: RegistrationInput
+) {
   return {
     agent_id: agentId,
+
     full_name: data.fullName.trim(),
+
     phone: data.phone.trim(),
+
     home_address: data.homeAddress.trim(),
+
     state: data.state.trim(),
+
     lga: data.lga.trim(),
+
+    email: toNullable(data.email),
+
+    nin: toNullable(data.nin),
+
+    bvn: toNullable(data.bvn),
+
+    e_reg_number: toNullable(
+      data.eRegNumber
+    ),
+
+    vin: toNullable(data.vin),
+
+    ward: toNullable(data.ward),
+
+    account_number: toNullable(
+      data.accountNumber
+    ),
+
+    bank_name: toNullable(
+      data.bankName
+    ),
+
+    account_name: toNullable(
+      data.accountName
+    ),
   };
 }
 
-async function touchLastSeen(agentId: string) {
+function duplicateField(
+  message: string
+): string {
+  if (
+    message.includes(
+      'registrations_nin_key'
+    )
+  ) {
+    return 'NIN';
+  }
+
+  if (
+    message.includes(
+      'registrations_bvn_key'
+    )
+  ) {
+    return 'BVN';
+  }
+
+  return 'record';
+}
+
+async function touchLastSeen(
+  agentId: string
+) {
   const { error } = await supabase
     .from('agent_users')
     .update({
@@ -33,23 +109,47 @@ async function touchLastSeen(agentId: string) {
     .eq('id', agentId);
 
   if (error) {
-    console.error('Failed to update agent last seen:', {
-      agentId,
-      error,
-    });
+    console.warn(
+      'Failed to update agent last_seen_at',
+      error
+    );
   }
 }
 
 export const mobileRegistrationsService = {
-  async create(agentId: string, data: RegistrationInput) {
-    const { data: row, error } = await supabase
-      .from('registrations')
-      .insert(toRow(agentId, data))
-      .select('id, reg_number, status')
-      .single();
+  async create(
+    agentId: string,
+    data: RegistrationInput
+  ) {
+    const { data: row, error } =
+      await supabase
+        .from('registrations')
+        .insert(
+          toRow(agentId, data)
+        )
+        .select(
+          `
+            id,
+            reg_number,
+            status
+          `
+        )
+        .single();
 
     if (error) {
-      console.error('Failed to submit registration:', error);
+      if (error.code === '23505') {
+        throw new AppError(
+          `A registration with this ${duplicateField(
+            error.message
+          )} already exists`,
+          409
+        );
+      }
+
+      console.error(
+        'Failed to submit registration',
+        error
+      );
 
       throw new AppError(
         'Failed to submit registration',
@@ -69,32 +169,48 @@ export const mobileRegistrationsService = {
     const results: {
       localId: string;
       success: boolean;
-      registrationId?: string;
       regNumber?: string;
-      status?: string;
       error?: string;
     }[] = [];
 
     for (const record of records) {
-      const { localId, ...data } = record;
+      const {
+        localId,
+        ...registration
+      } = record;
 
-      const { data: row, error } = await supabase
-        .from('registrations')
-        .insert(toRow(agentId, data))
-        .select('id, reg_number, status')
-        .single();
+      const { data: row, error } =
+        await supabase
+          .from('registrations')
+          .insert(
+            toRow(
+              agentId,
+              registration
+            )
+          )
+          .select(
+            'reg_number'
+          )
+          .single();
 
       if (error) {
-        console.error('Failed to sync registration:', {
-          agentId,
-          localId,
-          error,
-        });
+        console.warn(
+          'Failed to sync registration',
+          {
+            localId,
+            error,
+          }
+        );
 
         results.push({
           localId,
           success: false,
-          error: 'Failed to save registration',
+          error:
+            error.code === '23505'
+              ? `Duplicate ${duplicateField(
+                  error.message
+                )}`
+              : 'Failed to save registration',
         });
 
         continue;
@@ -103,9 +219,7 @@ export const mobileRegistrationsService = {
       results.push({
         localId,
         success: true,
-        registrationId: row.id,
         regNumber: row.reg_number,
-        status: row.status,
       });
     }
 
@@ -116,7 +230,11 @@ export const mobileRegistrationsService = {
 
   async listMine(
     agentId: string,
-    status: 'pending' | 'approved' | 'rejected' | 'all'
+    status:
+      | 'pending'
+      | 'approved'
+      | 'rejected'
+      | 'all'
   ) {
     let query = supabase
       .from('registrations')
@@ -126,26 +244,48 @@ export const mobileRegistrationsService = {
           reg_number,
           full_name,
           phone,
+          email,
+          nin,
+          bvn,
+          e_reg_number,
+          vin,
           home_address,
           state,
           lga,
+          ward,
+          account_number,
+          bank_name,
+          account_name,
           status,
           created_at
         `
       )
-      .eq('agent_id', agentId)
-      .order('created_at', {
-        ascending: false,
-      });
+      .eq(
+        'agent_id',
+        agentId
+      )
+      .order(
+        'created_at',
+        {
+          ascending: false,
+        }
+      );
 
     if (status !== 'all') {
-      query = query.eq('status', status);
+      query = query.eq(
+        'status',
+        status
+      );
     }
 
-    const { data, error } = await query;
+    const { data, error } =
+      await query;
 
     if (error) {
-      console.error('Failed to load registrations:', error);
+      console.error(
+        'Failed to load registrations',
+        error
+      );
 
       throw new AppError(
         'Failed to load registrations',
@@ -153,33 +293,62 @@ export const mobileRegistrationsService = {
       );
     }
 
-    return data ?? [];
+    return data;
   },
 
-  async myStats(agentId: string) {
-    const { count: total, error: totalError } = await supabase
-      .from('registrations')
-      .select('id', {
-        count: 'exact',
-        head: true,
-      })
-      .eq('agent_id', agentId);
-
-    const { count: approved, error: approvedError } =
-      await supabase
+  async myStats(
+    agentId: string
+  ) {
+    const [
+      totalResult,
+      approvedResult,
+    ] = await Promise.all([
+      supabase
         .from('registrations')
-        .select('id', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('agent_id', agentId)
-        .eq('status', 'approved');
+        .select(
+          'id',
+          {
+            count: 'exact',
+            head: true,
+          }
+        )
+        .eq(
+          'agent_id',
+          agentId
+        ),
 
-    if (totalError || approvedError) {
-      console.error('Failed to load registration stats:', {
-        totalError,
-        approvedError,
-      });
+      supabase
+        .from('registrations')
+        .select(
+          'id',
+          {
+            count: 'exact',
+            head: true,
+          }
+        )
+        .eq(
+          'agent_id',
+          agentId
+        )
+        .eq(
+          'status',
+          'approved'
+        ),
+    ]);
+
+    if (
+      totalResult.error ||
+      approvedResult.error
+    ) {
+      console.error(
+        'Failed to load registration stats',
+        {
+          totalError:
+            totalResult.error,
+          approvedError:
+            approvedResult.error,
+        }
+      );
 
       throw new AppError(
         'Failed to load stats',
@@ -188,8 +357,11 @@ export const mobileRegistrationsService = {
     }
 
     return {
-      total: total ?? 0,
-      approved: approved ?? 0,
+      total:
+        totalResult.count ?? 0,
+
+      approved:
+        approvedResult.count ?? 0,
     };
   },
 };
