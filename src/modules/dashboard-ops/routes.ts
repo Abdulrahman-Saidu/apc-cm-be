@@ -16,7 +16,6 @@ dashboardOpsRouter.get('/overview', asyncHandler(dashboardOpsController.overview
 dashboardOpsRouter.get('/agents', validateQuery(agentsQuerySchema), asyncHandler(dashboardOpsController.listAgents));
 dashboardOpsRouter.patch('/agents/:id/activate', asyncHandler(dashboardOpsController.activateAgent));
 dashboardOpsRouter.patch('/agents/:id/deactivate', asyncHandler(dashboardOpsController.deactivateAgent));
-dashboardOpsRouter.patch('/agents/:id/reset-device', asyncHandler(dashboardOpsController.resetAgentDevice));
 
 dashboardOpsRouter.get('/queue', validateQuery(queueQuerySchema), asyncHandler(dashboardOpsController.listQueue));
 dashboardOpsRouter.patch('/queue/:id/approve', asyncHandler(dashboardOpsController.approve));

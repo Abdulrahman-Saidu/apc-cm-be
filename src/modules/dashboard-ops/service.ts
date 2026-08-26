@@ -1,42 +1,9 @@
 import { supabase } from '@/config/supabase';
 import { AppError } from '@/middleware/errorHandler';
-import { RegistrationRow, RegistrationStatus } from '@/types/db';
 
 const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000; // "active" = synced in the last 24h
 
 type Pagination = { page: number; pageSize: number };
-
-type AgentJoin = { full_name: string; agent_code: string } | null;
-
-type RecentActivityRow = Pick<RegistrationRow, 'id' | 'reg_number' | 'full_name' | 'status' | 'created_at' | 'reviewed_at'> & {
-    agent: AgentJoin;
-};
-
-type QueueRow = Pick<
-    RegistrationRow,
-    'id' | 'reg_number' | 'full_name' | 'phone' | 'nin' | 'bvn' | 'home_address' | 'state' | 'lga' | 'ward' | 'status' | 'rejection_reason' | 'created_at' | 'reviewed_at'
-> & { agent: AgentJoin };
-
-type RegistryRow = Pick<
-    RegistrationRow,
-    'id' | 'reg_number' | 'full_name' | 'phone' | 'email' | 'home_address' | 'state' | 'lga' | 'ward' | 'account_number' | 'bank_name' | 'account_name' | 'created_at'
-> & { agent: AgentJoin };
-
-type RegistryExportRow = Pick<
-    RegistrationRow,
-    'reg_number' | 'full_name' | 'phone' | 'email' | 'home_address' | 'state' | 'lga' | 'ward' | 'account_number' | 'bank_name' | 'account_name' | 'created_at'
-> & { agent: AgentJoin };
-
-type AgentListRow = {
-    id: string;
-    agent_code: string;
-    full_name: string;
-    role: string;
-    lga: string | null;
-    device_id: string | null;
-    is_active: boolean;
-    last_seen_at: string | null;
-};
 
 function startOfDay(d: Date) {
     const copy = new Date(d);
@@ -74,14 +41,12 @@ export const dashboardOpsService = {
                 supabase
                     .from('registrations')
                     .select('created_at')
-                    .gte('created_at', startOfDay(sevenDaysAgo).toISOString())
-                    .returns<Pick<RegistrationRow, 'created_at'>[]>(),
+                    .gte('created_at', startOfDay(sevenDaysAgo).toISOString()),
                 supabase
                     .from('registrations')
                     .select('id, reg_number, full_name, status, created_at, reviewed_at, agent:agent_users(full_name, agent_code)')
                     .order('created_at', { ascending: false })
-                    .limit(10)
-                    .returns<RecentActivityRow[]>(),
+                    .limit(10),
             ]);
 
         if (trendError || recentError) throw new AppError('Failed to load overview', 500);
@@ -112,17 +77,16 @@ export const dashboardOpsService = {
 
         const { data: agents, error, count } = await supabase
             .from('agent_users')
-            .select('id, agent_code, full_name, role, lga, device_id, is_active, last_seen_at', { count: 'exact' })
+            .select('id, agent_code, full_name, role, lga, is_active, last_seen_at', { count: 'exact' })
             .order('created_at', { ascending: false })
-            .range(from, to)
-            .returns<AgentListRow[]>();
+            .range(from, to);
 
         if (error) throw new AppError('Failed to load agents', 500);
 
         const ids = (agents ?? []).map((a) => a.id);
         const { data: regCounts, error: countError } = ids.length
-            ? await supabase.from('registrations').select('agent_id').in('agent_id', ids).returns<Pick<RegistrationRow, 'agent_id'>[]>()
-            : { data: [] as Pick<RegistrationRow, 'agent_id'>[], error: null };
+            ? await supabase.from('registrations').select('agent_id').in('agent_id', ids)
+            : { data: [], error: null };
         if (countError) throw new AppError('Failed to load agent stats', 500);
 
         const countMap = new Map<string, number>();
@@ -137,7 +101,6 @@ export const dashboardOpsService = {
                 fullName: a.full_name,
                 role: a.role,
                 lga: a.lga,
-                deviceId: a.device_id,
                 registrations: countMap.get(a.id) ?? 0,
                 lastSeen: a.last_seen_at,
                 status: a.is_active ? 'active' : 'deactivated',
@@ -158,26 +121,9 @@ export const dashboardOpsService = {
         return { id, status: 'deactivated' };
     },
 
-    async resetAgentDevice(id: string) {
-        const { data, error } = await supabase
-            .from('agent_users')
-            .update({ device_id: null, bound_at: null })
-            .eq('id', id)
-            .select('id')
-            .maybeSingle();
-
-        if (error) throw new AppError('Failed to reset device binding', 500);
-        if (!data) throw new AppError('Agent not found', 404);
-
-        return { id, deviceReset: true };
-    },
-
-    async listQueue(status: RegistrationStatus | 'all', pagination: Pagination) {
+    async listQueue(status: 'pending' | 'approved' | 'rejected' | 'all', pagination: Pagination) {
         const [from, to] = pageRange(pagination);
 
-        // NOTE: .returns<T[]>() is applied only at the final await, after every
-        // conditional filter — calling it earlier collapses the query into a
-        // PostgrestTransformBuilder, which no longer exposes .eq()/.ilike()/etc.
         let query = supabase
             .from('registrations')
             .select(
@@ -189,7 +135,7 @@ export const dashboardOpsService = {
 
         if (status !== 'all') query = query.eq('status', status);
 
-        const { data, error, count } = await query.returns<QueueRow[]>();
+        const { data, error, count } = await query;
         if (error) throw new AppError('Failed to load queue', 500);
 
         return { data, pagination: { page: pagination.page, pageSize: pagination.pageSize, total: count ?? 0 } };
@@ -242,7 +188,7 @@ export const dashboardOpsService = {
         if (filters.state) query = query.eq('state', filters.state);
         if (filters.lga) query = query.eq('lga', filters.lga);
 
-        const { data, error, count } = await query.returns<RegistryRow[]>();
+        const { data, error, count } = await query;
         if (error) throw new AppError('Failed to load registry', 500);
 
         return { data, pagination: { page: pagination.page, pageSize: pagination.pageSize, total: count ?? 0 } };
@@ -261,13 +207,13 @@ export const dashboardOpsService = {
         if (filters.state) query = query.eq('state', filters.state);
         if (filters.lga) query = query.eq('lga', filters.lga);
 
-        const { data: rows, error } = await query.returns<RegistryExportRow[]>();
+        const { data: rows, error } = await query;
         if (error) throw new AppError('Failed to load registry', 500);
 
         const headers = ['Reg Number', 'Full Name', 'Phone', 'Email', 'Home Address', 'State', 'LGA', 'Ward', 'Account Number', 'Bank Name', 'Account Name', 'Agent', 'Registered At'];
         const lines = [headers.join(',')];
 
-        for (const r of rows ?? []) {
+        for (const r of (rows ?? []) as any[]) {
             lines.push(
                 [
                     r.reg_number,
