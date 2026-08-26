@@ -1,21 +1,27 @@
 import { supabase } from '@/config/supabase';
 import { AppError } from '@/middleware/errorHandler';
+import { RegistrationRow, RegistrationStatus } from '@/types/db';
 
+/**
+ * Matches createRegistrationSchema exactly: only fullName, phone,
+ * homeAddress, state, and lga are required — everything else is
+ * optional end-to-end (mobile form -> Zod -> DB column).
+ */
 type RegistrationInput = {
   fullName: string;
   phone: string;
   email?: string;
-  nin: string;
-  bvn: string;
+  nin?: string;
+  bvn?: string;
   eRegNumber?: string;
   vin?: string;
   homeAddress: string;
   state: string;
   lga: string;
-  ward: string;
-  accountNumber: string;
-  bankName: string;
-  accountName: string;
+  ward?: string;
+  accountNumber?: string;
+  bankName?: string;
+  accountName?: string;
 };
 
 function toRow(agentId: string, data: RegistrationInput) {
@@ -54,7 +60,7 @@ export const mobileRegistrationsService = {
       .from('registrations')
       .insert(toRow(agentId, data))
       .select('id, reg_number, status')
-      .single();
+      .single<Pick<RegistrationRow, 'id' | 'reg_number' | 'status'>>();
 
     if (error) {
       if (error.code === '23505') {
@@ -77,7 +83,7 @@ export const mobileRegistrationsService = {
         .from('registrations')
         .insert(toRow(agentId, data))
         .select('reg_number')
-        .single();
+        .single<Pick<RegistrationRow, 'reg_number'>>();
 
       if (error) {
         results.push({
@@ -88,7 +94,7 @@ export const mobileRegistrationsService = {
         continue;
       }
 
-      results.push({ localId, success: true, regNumber: row.reg_number });
+      results.push({ localId, success: true, regNumber: row.reg_number ?? undefined });
     }
 
     await touchLastSeen(agentId);
@@ -96,7 +102,7 @@ export const mobileRegistrationsService = {
     return results;
   },
 
-  async listMine(agentId: string, status: 'pending' | 'approved' | 'rejected' | 'all') {
+  async listMine(agentId: string, status: RegistrationStatus | 'all') {
     let query = supabase
       .from('registrations')
       .select('id, reg_number, full_name, phone, home_address, state, lga, email, nin, bvn, e_reg_number, vin, ward, account_number, bank_name, account_name, status, rejection_reason, created_at')
