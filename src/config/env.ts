@@ -30,4 +30,6 @@ export const env = {
     senderEmail: required('BREVO_SENDER_EMAIL'),
     senderName: process.env.BREVO_SENDER_NAME ?? 'VRM',
   },
+
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
 };

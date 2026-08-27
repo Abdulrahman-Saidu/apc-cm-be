@@ -1,12 +1,8 @@
 import { supabase } from '@/config/supabase';
 import { AppError } from '@/middleware/errorHandler';
 import { RegistrationRow, RegistrationStatus } from '@/types/db';
+import { reverseGeocode } from '@/utils/geocoding';
 
-/**
- * Matches createRegistrationSchema exactly: only fullName, phone,
- * homeAddress, state, and lga are required — everything else is
- * optional end-to-end (mobile form -> Zod -> DB column).
- */
 type RegistrationInput = {
   fullName: string;
   phone: string;
@@ -22,9 +18,11 @@ type RegistrationInput = {
   accountNumber?: string;
   bankName?: string;
   accountName?: string;
+  latitude?: number;
+  longitude?: number;
 };
 
-function toRow(agentId: string, data: RegistrationInput) {
+function toRow(agentId: string, data: RegistrationInput, locationLabel: string | null) {
   return {
     agent_id: agentId,
     full_name: data.fullName,
@@ -41,6 +39,9 @@ function toRow(agentId: string, data: RegistrationInput) {
     account_number: data.accountNumber ?? null,
     bank_name: data.bankName ?? null,
     account_name: data.accountName ?? null,
+    latitude: data.latitude ?? null,
+    longitude: data.longitude ?? null,
+    location_label: locationLabel,
   };
 }
 
@@ -54,11 +55,18 @@ async function touchLastSeen(agentId: string) {
   await supabase.from('agent_users').update({ last_seen_at: new Date().toISOString() }).eq('id', agentId);
 }
 
+async function geocodeIfPresent(data: RegistrationInput): Promise<string | null> {
+  if (data.latitude == null || data.longitude == null) return null;
+  return reverseGeocode(data.latitude, data.longitude);
+}
+
 export const mobileRegistrationsService = {
   async create(agentId: string, data: RegistrationInput) {
+    const locationLabel = await geocodeIfPresent(data);
+
     const { data: row, error } = await supabase
       .from('registrations')
-      .insert(toRow(agentId, data))
+      .insert(toRow(agentId, data, locationLabel))
       .select('id, reg_number, status')
       .single<Pick<RegistrationRow, 'id' | 'reg_number' | 'status'>>();
 
@@ -77,11 +85,16 @@ export const mobileRegistrationsService = {
   async sync(agentId: string, records: (RegistrationInput & { localId: string })[]) {
     const results: { localId: string; success: boolean; regNumber?: string; error?: string }[] = [];
 
-    for (const record of records) {
-      const { localId, ...data } = record;
+    // Geocode everything in parallel up front — the inserts below still run
+    // sequentially (per-record duplicate handling), but there's no reason to
+    // pay the geocoding latency serially too.
+    const locationLabels = await Promise.all(records.map(geocodeIfPresent));
+
+    for (let i = 0; i < records.length; i++) {
+      const { localId, ...data } = records[i];
       const { data: row, error } = await supabase
         .from('registrations')
-        .insert(toRow(agentId, data))
+        .insert(toRow(agentId, data, locationLabels[i]))
         .select('reg_number')
         .single<Pick<RegistrationRow, 'reg_number'>>();
 
@@ -105,7 +118,7 @@ export const mobileRegistrationsService = {
   async listMine(agentId: string, status: RegistrationStatus | 'all') {
     let query = supabase
       .from('registrations')
-      .select('id, reg_number, full_name, phone, home_address, state, lga, email, nin, bvn, e_reg_number, vin, ward, account_number, bank_name, account_name, status, rejection_reason, created_at')
+      .select('id, reg_number, full_name, phone, home_address, state, lga, email, nin, bvn, e_reg_number, vin, ward, account_number, bank_name, account_name, latitude, longitude, location_label, status, rejection_reason, created_at')
       .eq('agent_id', agentId)
       .order('created_at', { ascending: false });
 

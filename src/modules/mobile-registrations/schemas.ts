@@ -15,6 +15,8 @@ const registrationFields = {
   accountNumber: z.string().min(5).optional(),
   bankName: z.string().min(2).optional(),
   accountName: z.string().min(2).optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
 };
 
 export const createRegistrationSchema = z.object(registrationFields);

@@ -52,6 +52,11 @@ export interface AgentUserRow {
  * Only full_name, phone, home_address, state, and lga are required by
  * the app and enforced NOT NULL in the DB. Every other field is
  * genuinely optional end-to-end (mobile form -> Zod schema -> DB column).
+ *
+ * latitude/longitude are the raw device GPS coordinates captured at
+ * registration time; location_label is the reverse-geocoded human-readable
+ * address derived from them (e.g. "Jaafaru Rd, Barnawa, Kaduna"). All three
+ * are nullable — GPS or geocoding can fail without blocking a registration.
  */
 export interface RegistrationRow {
   id: string;
@@ -70,6 +75,9 @@ export interface RegistrationRow {
   account_number: string | null;
   bank_name: string | null;
   account_name: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  location_label: string | null;
   status: RegistrationStatus;
   rejection_reason: string | null;
   agent_id: string;
