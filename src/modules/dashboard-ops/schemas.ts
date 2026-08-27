@@ -24,3 +24,7 @@ export const registryQuerySchema = z.object({
 export const agentsQuerySchema = z.object({
   ...paginationFields,
 });
+
+export const updateAgentSchema = z.object({
+  phone: z.string().min(7, 'Enter a valid phone number'),
+});

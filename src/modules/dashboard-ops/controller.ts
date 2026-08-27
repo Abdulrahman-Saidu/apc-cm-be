@@ -23,6 +23,11 @@ export const dashboardOpsController = {
     res.status(200).json({ message: 'Agent deactivated', ...result });
   },
 
+  async updateAgent(req: Request, res: Response) {
+    const result = await dashboardOpsService.updateAgentPhone(req.params.id, req.body.phone);
+    res.status(200).json({ message: 'Agent updated', ...result });
+  },
+
   async listQueue(req: Request, res: Response) {
     const { status, page, pageSize } = req.query as any;
     const result = await dashboardOpsService.listQueue(status ?? 'pending', { page, pageSize });
