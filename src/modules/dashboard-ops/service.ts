@@ -192,7 +192,7 @@ import { supabase } from '@/config/supabase';
             let query = supabase
                 .from('registrations')
                 .select(
-                    'id, reg_number, full_name, phone, email, home_address, state, lga, ward, account_number, bank_name, account_name, created_at, agent:agent_users(full_name, agent_code)',
+                    'id, reg_number, full_name, phone, email, nin, bvn, e_reg_number, vin, home_address, state, lga, ward, account_number, bank_name, account_name, created_at, agent:agent_users(full_name, agent_code)',
                     { count: 'exact' }
                 )
                 .eq('status', 'approved')
@@ -214,7 +214,7 @@ import { supabase } from '@/config/supabase';
         async exportRegistryCsv(filters: { homeAddress?: string; state?: string; lga?: string }): Promise<string> {
             let query = supabase
                 .from('registrations')
-                .select('reg_number, full_name, phone, email, home_address, state, lga, ward, account_number, bank_name, account_name, created_at, agent:agent_users(full_name, agent_code)')
+                .select('reg_number, full_name, phone, email, nin, bvn, e_reg_number, vin, home_address, state, lga, ward, account_number, bank_name, account_name, created_at, agent:agent_users(full_name, agent_code)')
                 .eq('status', 'approved')
                 .order('created_at', { ascending: false });
 
@@ -225,7 +225,7 @@ import { supabase } from '@/config/supabase';
             const { data: rows, error } = await query;
             if (error) throw new AppError('Failed to load registry', 500);
 
-            const headers = ['Reg Number', 'Full Name', 'Phone', 'Email', 'Home Address', 'State', 'LGA', 'Ward', 'Account Number', 'Bank Name', 'Account Name', 'Agent', 'Registered At'];
+            const headers = ['Reg Number', 'Full Name', 'Phone', 'Email', 'NIN', 'BVN', 'E-Reg Number', 'VIN', 'Home Address', 'State', 'LGA', 'Ward', 'Account Number', 'Bank Name', 'Account Name', 'Agent', 'Registered At'];
             const lines = [headers.join(',')];
 
             for (const r of (rows ?? []) as any[]) {
@@ -235,6 +235,10 @@ import { supabase } from '@/config/supabase';
                         r.full_name,
                         r.phone,
                         r.email,
+                        r.nin,
+                        r.bvn,
+                        r.e_reg_number,
+                        r.vin,
                         r.home_address,
                         r.state,
                         r.lga,
