@@ -238,9 +238,8 @@ export const dashboardAuthService = {
       if (error) throw new AppError('Something went wrong sending the invite. Please try again.', 500);
     }
 
-    const inviter = await findById(inviterId);
     const inviteLink = `${env.clientOrigin}/register?invite=${inviteToken}&email=${encodeURIComponent(email)}`;
-    await brevoClient.sendInviteEmail(email, input.fullName, inviteLink, inviter?.full_name ?? 'The super admin');
+    await brevoClient.sendInviteEmail(email, input.fullName, inviteLink);
 
     return { email, inviteSent: true };
   },

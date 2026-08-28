@@ -3,7 +3,7 @@ import { mobileAuthService } from './service';
 
 export const mobileAuthController = {
   async inviteAgent(req: Request, res: Response) {
-    const result = await mobileAuthService.inviteAgent(req.user!.id, req.user!.email, req.body);
+    const result = await mobileAuthService.inviteAgent(req.user!.id, req.body);
     res.status(201).json({ message: 'Invite sent', ...result });
   },
 

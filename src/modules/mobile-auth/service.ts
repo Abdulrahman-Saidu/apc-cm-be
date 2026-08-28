@@ -9,7 +9,6 @@ import { signToken, signResetToken, verifyResetToken } from '@/utils/jwt';
 export const mobileAuthService = {
   async inviteAgent(
     invitedByAdminId: string,
-    invitedByAdminName: string,
     data: { fullName: string; email: string; phone: string; lga: string; role: string }
   ) {
     const { data: existing } = await supabase
@@ -34,13 +33,7 @@ export const mobileAuthService = {
 
     if (error || !agent) throw new AppError('Failed to create agent invite', 500);
 
-    await brevoClient.sendAgentInviteEmail(
-      agent.email,
-      agent.full_name,
-      agent.agent_code,
-      env.agentAppPlaystoreUrl,
-      invitedByAdminName
-    );
+    await brevoClient.sendAgentInviteEmail(agent.email, agent.full_name, agent.agent_code, env.agentAppPlaystoreUrl);
 
     return { agentId: agent.id, agentCode: agent.agent_code };
   },
