@@ -142,7 +142,7 @@ export const dashboardOpsService = {
         let query = supabase
             .from('registrations')
             .select(
-                'id, reg_number, full_name, phone, nin, bvn, home_address, state, lga, ward, latitude, longitude, location_label, status, rejection_reason, created_at, reviewed_at, agent:agent_users(full_name, agent_code)',
+                'id, reg_number, full_name, phone, email, nin, bvn, e_reg_number, vin, home_address, state, lga, ward, account_number, bank_name, account_name, latitude, longitude, location_label, status, rejection_reason, created_at, reviewed_at, agent:agent_users(full_name, agent_code)',
                 { count: 'exact' }
             )
             .order('created_at', { ascending: false })
