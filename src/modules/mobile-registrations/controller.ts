@@ -7,6 +7,11 @@ export const mobileRegistrationsController = {
     res.status(201).json({ message: 'Registration submitted', ...result });
   },
 
+  async update(req: Request, res: Response) {
+    const result = await mobileRegistrationsService.update(req.user!.id, req.params.id, req.body);
+    res.status(200).json({ message: 'Registration updated', ...result });
+  },
+
   async sync(req: Request, res: Response) {
     const results = await mobileRegistrationsService.sync(req.user!.id, req.body.registrations);
     res.status(200).json({ message: 'Sync complete', results });

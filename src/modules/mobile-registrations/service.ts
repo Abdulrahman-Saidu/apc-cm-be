@@ -45,6 +45,33 @@ function toRow(agentId: string, data: RegistrationInput, locationLabel: string |
   };
 }
 
+// Partial-update variant of toRow: only includes keys actually present in the
+// payload, so a partial PATCH (e.g. just `phone`) never nulls out fields the
+// agent didn't touch. This is the key difference from create's toRow(), which
+// always writes every optional field (defaulting to null) because create
+// always receives the full form.
+function toUpdateRow(data: Partial<RegistrationInput>, locationLabel: string | null | undefined) {
+  const row: Record<string, unknown> = {};
+  if (data.fullName !== undefined) row.full_name = data.fullName;
+  if (data.phone !== undefined) row.phone = data.phone;
+  if (data.email !== undefined) row.email = data.email;
+  if (data.nin !== undefined) row.nin = data.nin;
+  if (data.bvn !== undefined) row.bvn = data.bvn;
+  if (data.eRegNumber !== undefined) row.e_reg_number = data.eRegNumber;
+  if (data.vin !== undefined) row.vin = data.vin;
+  if (data.homeAddress !== undefined) row.home_address = data.homeAddress;
+  if (data.state !== undefined) row.state = data.state;
+  if (data.lga !== undefined) row.lga = data.lga;
+  if (data.ward !== undefined) row.ward = data.ward;
+  if (data.accountNumber !== undefined) row.account_number = data.accountNumber;
+  if (data.bankName !== undefined) row.bank_name = data.bankName;
+  if (data.accountName !== undefined) row.account_name = data.accountName;
+  if (data.latitude !== undefined) row.latitude = data.latitude;
+  if (data.longitude !== undefined) row.longitude = data.longitude;
+  if (locationLabel !== undefined) row.location_label = locationLabel;
+  return row;
+}
+
 function duplicateField(message: string): string {
   if (message.includes('registrations_nin_key')) return 'NIN';
   if (message.includes('registrations_bvn_key')) return 'BVN';
@@ -57,6 +84,15 @@ async function touchLastSeen(agentId: string) {
 
 async function geocodeIfPresent(data: RegistrationInput): Promise<string | null> {
   if (data.latitude == null || data.longitude == null) return null;
+  return reverseGeocode(data.latitude, data.longitude);
+}
+
+// Update-specific: only recompute location_label if BOTH coords were sent in
+// this particular PATCH. `undefined` (as opposed to `null`) means "leave
+// location_label alone" — toUpdateRow only writes the key when this returns
+// something other than undefined.
+async function geocodeForUpdate(data: Partial<RegistrationInput>): Promise<string | null | undefined> {
+  if (data.latitude === undefined || data.longitude === undefined) return undefined;
   return reverseGeocode(data.latitude, data.longitude);
 }
 
@@ -80,6 +116,38 @@ export const mobileRegistrationsService = {
     await touchLastSeen(agentId);
 
     return row;
+  },
+
+  async update(agentId: string, id: string, data: Partial<RegistrationInput>) {
+    const locationLabel = await geocodeForUpdate(data);
+    const patch = toUpdateRow(data, locationLabel);
+
+    const { data: rows, error } = await supabase
+      .from('registrations')
+      .update(patch)
+      .eq('id', id)
+      .eq('agent_id', agentId)
+      .eq('status', 'pending')
+      .select('id, reg_number, status');
+
+    if (error) {
+      if (error.code === '23505') {
+        throw new AppError(`A registration with this ${duplicateField(error.message)} already exists`, 409);
+      }
+      throw new AppError('Failed to update registration', 500);
+    }
+
+    // Supabase doesn't error on zero matched rows for an update — it just
+    // returns []. That's exactly the "not this agent's record, or no longer
+    // pending" case, so we turn it into an explicit 409 here rather than
+    // letting it look like a silent no-op success.
+    if (!rows || rows.length === 0) {
+      throw new AppError('This registration is no longer editable', 409);
+    }
+
+    await touchLastSeen(agentId);
+
+    return rows[0];
   },
 
   async sync(agentId: string, records: (RegistrationInput & { localId: string })[]) {

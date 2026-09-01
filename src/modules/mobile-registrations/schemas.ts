@@ -21,6 +21,8 @@ const registrationFields = {
 
 export const createRegistrationSchema = z.object(registrationFields);
 
+export const updateRegistrationSchema = z.object(registrationFields).partial();
+
 export const syncRegistrationsSchema = z.object({
   registrations: z
     .array(z.object({ ...registrationFields, localId: z.string() }))
