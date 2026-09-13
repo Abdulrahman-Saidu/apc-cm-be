@@ -2,6 +2,7 @@ export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD';
 export type AdminRole = 'super_admin' | 'admin';
 export type InviteStatus = 'pending' | 'registered';
 export type RegistrationStatus = 'pending' | 'approved' | 'rejected';
+export type ApkInviteStatus = 'pending' | 'used' | 'revoked';
 
 export interface AdminUserRow {
   id: string;
@@ -85,4 +86,25 @@ export interface RegistrationRow {
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Matches the `apk_download_invites` table.
+ *
+ * One-time, expiring tokens emailed to agents so they can download the
+ * app APK from a page outside dashboard auth. `status` moves
+ * pending -> used on first successful validation (atomic, guarded on
+ * status='pending' in the update), or pending -> revoked when a fresh
+ * invite is issued for the same email before the old one is consumed.
+ */
+export interface ApkDownloadInviteRow {
+  id: string;
+  email: string;
+  token: string;
+  status: ApkInviteStatus;
+  invited_by: string | null;
+  invited_at: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
 }

@@ -25,6 +25,14 @@ export const env = {
   agentAppPlaystoreUrl: required('AGENT_APP_PLAYSTORE_URL'),
   superAdminEmail: required('SUPER_ADMIN_EMAIL').toLowerCase(),
 
+  r2: {
+    accountId: required('R2_ACCOUNT_ID'),
+    accessKeyId: required('R2_ACCESS_KEY_ID'),
+    secretAccessKey: required('R2_SECRET_ACCESS_KEY'),
+    bucket: process.env.R2_BUCKET ?? 'apk-releases',
+    filePath: required('R2_FILE_PATH'),
+  },
+
   brevo: {
     apiKey: required('BREVO_API_KEY'),
     senderEmail: required('BREVO_SENDER_EMAIL'),

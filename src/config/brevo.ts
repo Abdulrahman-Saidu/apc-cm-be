@@ -22,10 +22,6 @@ class BrevoClient {
     this.api = new SibApiV3Sdk.TransactionalEmailsApi();
   }
 
-  /**
-   * Shared branded shell every outgoing email is rendered inside.
-   * Keeps the header/footer consistent and avoids duplicating markup per email type.
-   */
   private renderShell(title: string, bodyHtml: string) {
     return `
       <div style="background:${COLORS.bg}; padding:32px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
@@ -139,6 +135,38 @@ class BrevoClient {
     email.to = [{ email: to, name }];
     email.subject = `You've been invited as a Field Agent`;
     email.htmlContent = this.renderShell("You've been invited as a Field Agent", body);
+
+    await this.api.sendTransacEmail(email);
+  }
+
+  async sendApkDownloadInviteEmail(to: string, downloadLink: string, expiresAt: string) {
+    const expiryText = new Date(expiresAt).toLocaleString('en-NG', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    const body = `
+      <p style="margin:0 0 12px; font-size:14px; line-height:1.6;">Hi,</p>
+      <p style="margin:0 0 24px; font-size:14px; line-height:1.6;">
+        Use the button below to download the ${BRAND_NAME} app. This link is unique to you and can only be used once.
+      </p>
+      <div style="margin:0 0 20px;">
+        ${this.button('Download the app', downloadLink)}
+      </div>
+      <p style="margin:0 0 20px; font-size:13px; line-height:1.6; color:${COLORS.muted};">
+        This link expires on ${expiryText} and will stop working after your first download. If it's expired or already used, contact your administrator for a new one.
+      </p>
+      <p style="margin:0 0 6px; font-size:13px; color:${COLORS.muted};">
+        If the button doesn't work, copy and paste this link into your browser:
+      </p>
+      <p style="margin:0; font-size:13px; color:${COLORS.blue}; word-break:break-all;">${downloadLink}</p>
+    `;
+
+    const email = new SibApiV3Sdk.SendSmtpEmail();
+    email.sender = { email: env.brevo.senderEmail, name: env.brevo.senderName };
+    email.to = [{ email: to }];
+    email.subject = `Your ${BRAND_NAME} app download link`;
+    email.htmlContent = this.renderShell('Download the app', body);
 
     await this.api.sendTransacEmail(email);
   }
