@@ -13,7 +13,10 @@ const INVITE_EXPIRY_HOURS = 48;
 const SIGNED_URL_EXPIRY_SECONDS = 300;
 
 export const apkDownloadService = {
-  async inviteAgent(inviterId: string, rawEmail: string) {
+  // Creates (or revokes-and-recreates) a one-time download token for `email`
+  // and returns the landing-page link. Does NOT send any email — callers
+  // decide whether/how to notify the recipient.
+  async createInviteToken(invitedByAdminId: string, rawEmail: string) {
     const email = rawEmail.toLowerCase();
     const token = crypto.randomBytes(24).toString('hex');
     const invited_at = new Date().toISOString();
@@ -30,17 +33,23 @@ export const apkDownloadService = {
       email,
       token,
       status: 'pending',
-      invited_by: inviterId,
+      invited_by: invitedByAdminId,
       invited_at,
       expires_at,
     });
-    if (insertError) throw new AppError('Something went wrong sending the invite. Please try again.', 500);
+    if (insertError) throw new AppError('Something went wrong creating the download link. Please try again.', 500);
 
-    // Points at the API's own redirect endpoint, not the dashboard —
-    // clicking this link immediately 302s to the signed R2 URL.
     const downloadLink = `${env.apiPublicUrl}/api/agents/apk/download/${token}`;
-    await brevoClient.sendApkDownloadInviteEmail(email, downloadLink, expires_at);
+    return { downloadLink, expires_at };
+  },
 
+  // Standalone admin action — creates a token and emails the link on its
+  // own. Used by POST /api/agents/apk/invite (e.g. to resend a lost link
+  // to an agent who already registered).
+  async inviteAgent(inviterId: string, rawEmail: string) {
+    const email = rawEmail.toLowerCase();
+    const { downloadLink, expires_at } = await this.createInviteToken(inviterId, email);
+    await brevoClient.sendApkDownloadInviteEmail(email, downloadLink, expires_at);
     return { email, inviteSent: true };
   },
 
@@ -62,7 +71,12 @@ export const apkDownloadService = {
     try {
       downloadUrl = await getSignedUrl(
         r2Client,
-        new GetObjectCommand({ Bucket: env.r2.bucket, Key: env.r2.filePath }),
+        new GetObjectCommand({
+          Bucket: env.r2.bucket,
+          Key: env.r2.filePath,
+          ResponseContentDisposition: 'attachment; filename="app-release.apk"',
+          ResponseContentType: 'application/vnd.android.package-archive',
+        }),
         { expiresIn: SIGNED_URL_EXPIRY_SECONDS }
       );
     } catch {

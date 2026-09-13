@@ -5,6 +5,7 @@ import { AppError } from '@/middleware/errorHandler';
 import { hashPassword, comparePassword } from '@/utils/password';
 import { generateOtpCode, hashOtp, verifyOtp as compareOtp, otpExpiryDate, isOtpExpired } from '@/utils/otp';
 import { signToken, signResetToken, verifyResetToken } from '@/utils/jwt';
+import { apkDownloadService } from '@/modules/apk-download/service';
 
 export const mobileAuthService = {
   async inviteAgent(
@@ -33,7 +34,8 @@ export const mobileAuthService = {
 
     if (error || !agent) throw new AppError('Failed to create agent invite', 500);
 
-    await brevoClient.sendAgentInviteEmail(agent.email, agent.full_name, agent.agent_code, env.agentAppPlaystoreUrl);
+    const { downloadLink } = await apkDownloadService.createInviteToken(invitedByAdminId, agent.email);
+    await brevoClient.sendAgentInviteEmail(agent.email, agent.full_name, agent.agent_code, downloadLink);
 
     return { agentId: agent.id, agentCode: agent.agent_code };
   },

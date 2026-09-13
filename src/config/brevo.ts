@@ -109,26 +109,26 @@ class BrevoClient {
     await this.api.sendTransacEmail(email);
   }
 
-  async sendAgentInviteEmail(to: string, name: string, agentCode: string, playStoreUrl: string) {
+  async sendAgentInviteEmail(to: string, name: string, agentCode: string, downloadLink: string) {
     const body = `
-      <p style="margin:0 0 12px; font-size:14px; line-height:1.6;">Hi ${name},</p>
-      <p style="margin:0 0 8px; font-size:14px; line-height:1.6;">
-        You've been invited to join the ${BRAND_NAME} as a <strong>Field Agent</strong>.
-      </p>
-      <p style="margin:0 0 24px; font-size:14px; line-height:1.6;">
-        Your agent code: <strong style="color:${COLORS.navy};">${agentCode}</strong>
-      </p>
-      <div style="margin:0 0 20px;">
-        ${this.button('Download the app', playStoreUrl)}
-      </div>
-      <p style="margin:0 0 20px; font-size:14px; line-height:1.6;">
-        Once installed, register using this exact email address: <strong>${to}</strong>
-      </p>
-      <p style="margin:0 0 6px; font-size:13px; color:${COLORS.muted};">
-        If the button doesn't work, copy and paste this link into your browser:
-      </p>
-      <p style="margin:0; font-size:13px; color:${COLORS.blue}; word-break:break-all;">${playStoreUrl}</p>
-    `;
+    <p style="margin:0 0 12px; font-size:14px; line-height:1.6;">Hi ${name},</p>
+    <p style="margin:0 0 8px; font-size:14px; line-height:1.6;">
+      You've been invited to join the ${BRAND_NAME} as a <strong>Field Agent</strong>.
+    </p>
+    <p style="margin:0 0 24px; font-size:14px; line-height:1.6;">
+      Your agent code: <strong style="color:${COLORS.navy};">${agentCode}</strong>
+    </p>
+    <div style="margin:0 0 20px;">
+      ${this.button('Download the app', downloadLink)}
+    </div>
+    <p style="margin:0 0 20px; font-size:14px; line-height:1.6;">
+      Once installed, register using this exact email address: <strong>${to}</strong>
+    </p>
+    <p style="margin:0 0 6px; font-size:13px; color:${COLORS.muted};">
+      If the button doesn't work, copy and paste this link into your browser:
+    </p>
+    <p style="margin:0; font-size:13px; color:${COLORS.blue}; word-break:break-all;">${downloadLink}</p>
+  `;
 
     const email = new SibApiV3Sdk.SendSmtpEmail();
     email.sender = { email: env.brevo.senderEmail, name: env.brevo.senderName };

@@ -17,17 +17,24 @@ apkDownloadRouter.post(
 );
 
 // Programmatic check — returns JSON with the signed URL (used by
-// Postman/tests or a future frontend page).
+// Postman/tests).
 apkDownloadRouter.get(
   '/validate/:token',
   apkValidateLimiter,
   asyncHandler(apkDownloadController.validate)
 );
 
-// Direct-click endpoint — the link in the invite email points here.
-// Redirects straight to the signed R2 URL; no frontend page involved.
+// Email link points here — renders a tap-to-download page.
+// Does not consume the token.
 apkDownloadRouter.get(
   '/download/:token',
+  asyncHandler(apkDownloadController.landing)
+);
+
+// Hit when the button on the landing page is tapped — consumes the
+// token and redirects straight to the signed R2 URL.
+apkDownloadRouter.get(
+  '/get/:token',
   apkValidateLimiter,
-  asyncHandler(apkDownloadController.download)
+  asyncHandler(apkDownloadController.getFile)
 );
