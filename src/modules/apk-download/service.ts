@@ -36,7 +36,9 @@ export const apkDownloadService = {
     });
     if (insertError) throw new AppError('Something went wrong sending the invite. Please try again.', 500);
 
-    const downloadLink = `${env.clientOrigin}/download?token=${token}`;
+    // Points at the API's own redirect endpoint, not the dashboard —
+    // clicking this link immediately 302s to the signed R2 URL.
+    const downloadLink = `${env.apiPublicUrl}/api/agents/apk/download/${token}`;
     await brevoClient.sendApkDownloadInviteEmail(email, downloadLink, expires_at);
 
     return { email, inviteSent: true };

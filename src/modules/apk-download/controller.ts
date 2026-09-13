@@ -11,4 +11,12 @@ export const apkDownloadController = {
     const result = await apkDownloadService.validateAndConsumeToken(req.params.token);
     res.status(200).json(result);
   },
+
+  // Clicked directly from the invite email — validates/consumes the
+  // token then 302-redirects the browser straight to the signed R2
+  // URL, so the download starts with no intermediate page.
+  async download(req: Request, res: Response) {
+    const { downloadUrl } = await apkDownloadService.validateAndConsumeToken(req.params.token);
+    res.redirect(302, downloadUrl);
+  },
 };

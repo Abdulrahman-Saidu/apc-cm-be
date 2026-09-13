@@ -10,20 +10,23 @@ export const env = {
   port: Number(process.env.PORT ?? 4000),
   nodeEnv: process.env.NODE_ENV ?? 'development',
 
-  // Single canonical origin — used for building links (invite emails, APK
-  // download links, etc). Always the first entry in CLIENT_ORIGIN.
   clientOrigin:
     process.env.NODE_ENV === 'production'
       ? required('CLIENT_ORIGIN').split(',')[0].trim()
       : (process.env.CLIENT_ORIGIN ?? '*').split(',')[0].trim(),
 
-  // Full list of allowed origins for CORS — supports multiple domains
-  // (e.g. a custom domain plus a Vercel preview/staging URL) via a
-  // comma-separated CLIENT_ORIGIN env var.
   allowedOrigins:
     process.env.NODE_ENV === 'production'
       ? required('CLIENT_ORIGIN').split(',').map((o) => o.trim())
       : (process.env.CLIENT_ORIGIN ?? '*').split(',').map((o) => o.trim()),
+
+  // The API's own public base URL — used for links that must point at
+  // this server itself (e.g. the APK download redirect), as opposed to
+  // clientOrigin, which points at the dashboard frontend.
+  apiPublicUrl:
+    process.env.NODE_ENV === 'production'
+      ? required('API_PUBLIC_URL')
+      : process.env.API_PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 4000}`,
 
   supabase: {
     url: required('SUPABASE_URL'),
