@@ -21,10 +21,10 @@ export const apkDownloadController = {
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Download VRM Agent App</title>
+  <title>Download The APC Consolidation Movement Agent App</title>
 </head>
 <body style="font-family:sans-serif;text-align:center;padding:60px 20px;">
-  <h2>VRM Agent App</h2>
+  <h2>APC Consolidation Movement Agent App</h2>
   <p>Tap below to download the app.</p>
   <a href="/api/agents/apk/get/${token}"
      style="display:inline-block;padding:14px 28px;background:#2563eb;color:#fff;
