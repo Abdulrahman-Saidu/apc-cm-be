@@ -9,10 +9,21 @@ function required(key: string): string {
 export const env = {
   port: Number(process.env.PORT ?? 4000),
   nodeEnv: process.env.NODE_ENV ?? 'development',
+
+  // Single canonical origin — used for building links (invite emails, APK
+  // download links, etc). Always the first entry in CLIENT_ORIGIN.
   clientOrigin:
     process.env.NODE_ENV === 'production'
-      ? required('CLIENT_ORIGIN')
-      : process.env.CLIENT_ORIGIN ?? '*',
+      ? required('CLIENT_ORIGIN').split(',')[0].trim()
+      : (process.env.CLIENT_ORIGIN ?? '*').split(',')[0].trim(),
+
+  // Full list of allowed origins for CORS — supports multiple domains
+  // (e.g. a custom domain plus a Vercel preview/staging URL) via a
+  // comma-separated CLIENT_ORIGIN env var.
+  allowedOrigins:
+    process.env.NODE_ENV === 'production'
+      ? required('CLIENT_ORIGIN').split(',').map((o) => o.trim())
+      : (process.env.CLIENT_ORIGIN ?? '*').split(',').map((o) => o.trim()),
 
   supabase: {
     url: required('SUPABASE_URL'),

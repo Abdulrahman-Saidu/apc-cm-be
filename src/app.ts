@@ -15,7 +15,24 @@ export const app = express();
 app.set('trust proxy', 1);
 
 app.use(helmet());
-app.use(cors({ origin: env.clientOrigin, credentials: true }));
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // No origin header (e.g. curl, Postman, server-to-server) — allow.
+      if (!origin) return callback(null, true);
+
+      if (env.allowedOrigins.includes('*') || env.allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      logger.warn('Blocked CORS request', { origin });
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 // morgan writes each request line through the structured logger instead of raw stdout text
