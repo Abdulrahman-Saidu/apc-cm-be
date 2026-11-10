@@ -1,8 +1,10 @@
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { env } from '@/config/env';
 
+/** 6-digit code from a cryptographically secure source (Math.random is guessable). */
 export function generateOtpCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+  return String(crypto.randomInt(100000, 1000000));
 }
 
 export async function hashOtp(code: string): Promise<string> {

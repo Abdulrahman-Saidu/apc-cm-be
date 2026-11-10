@@ -1,20 +1,22 @@
 import { z } from 'zod';
 
+const text = (min: number, max: number) => z.string().trim().min(min).max(max);
+
 const registrationFields = {
-  fullName: z.string().min(2),
-  phone: z.string().min(7),
-  email: z.string().email().optional(),
-  nin: z.string().min(5).optional(),
-  bvn: z.string().min(5).optional(),
-  eRegNumber: z.string().optional(),
-  vin: z.string().optional(),
-  homeAddress: z.string().min(3),
-  state: z.string().min(2),
-  lga: z.string().min(2),
-  ward: z.string().min(1).optional(),
-  accountNumber: z.string().min(5).optional(),
-  bankName: z.string().min(2).optional(),
-  accountName: z.string().min(2).optional(),
+  fullName: text(2, 120),
+  phone: text(7, 20),
+  email: z.string().trim().toLowerCase().email().max(254).optional(),
+  nin: text(5, 20).optional(),
+  bvn: text(5, 20).optional(),
+  eRegNumber: text(0, 40).optional(),
+  vin: text(0, 40).optional(),
+  homeAddress: text(3, 300),
+  state: text(2, 60),
+  lga: text(2, 80),
+  ward: text(1, 80).optional(),
+  accountNumber: text(5, 20).optional(),
+  bankName: text(2, 80).optional(),
+  accountName: text(2, 120).optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
 };
@@ -25,7 +27,7 @@ export const updateRegistrationSchema = z.object(registrationFields).partial();
 
 export const syncRegistrationsSchema = z.object({
   registrations: z
-    .array(z.object({ ...registrationFields, localId: z.string() }))
+    .array(z.object({ ...registrationFields, localId: z.string().min(1).max(100) }))
     .min(1)
     .max(50),
 });

@@ -11,13 +11,13 @@ export const queueQuerySchema = z.object({
 });
 
 export const rejectSchema = z.object({
-  reason: z.string().min(3, 'Rejection reason is required'),
+  reason: z.string().trim().min(3, 'Rejection reason is required').max(500),
 });
 
 export const registryQuerySchema = z.object({
-  homeAddress: z.string().optional(),
-  state: z.string().optional(),
-  lga: z.string().optional(),
+  homeAddress: z.string().trim().max(120).optional(),
+  state: z.string().trim().max(60).optional(),
+  lga: z.string().trim().max(80).optional(),
   ...paginationFields,
 });
 
@@ -26,5 +26,5 @@ export const agentsQuerySchema = z.object({
 });
 
 export const updateAgentSchema = z.object({
-  phone: z.string().min(7, 'Enter a valid phone number'),
+  phone: z.string().trim().min(7, 'Enter a valid phone number').max(20),
 });

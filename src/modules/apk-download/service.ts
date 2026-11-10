@@ -11,6 +11,12 @@ import { ApkDownloadInviteRow } from '@/types/db';
 const TABLE = 'apk_download_invites';
 const INVITE_EXPIRY_HOURS = 48;
 const SIGNED_URL_EXPIRY_SECONDS = 300;
+const APK_FILE_NAME = 'baba-isa-vanguard.apk';
+
+/** Tokens are 24 random bytes as hex (48 characters). */
+export function isWellFormedToken(token: string | undefined): token is string {
+  return typeof token === 'string' && /^[a-f0-9]{48}$/.test(token);
+}
 
 export const apkDownloadService = {
   // Creates (or revokes-and-recreates) a one-time download token for `email`
@@ -54,6 +60,9 @@ export const apkDownloadService = {
   },
 
   async validateAndConsumeToken(token: string) {
+    // Skip the database for anything that can't be a real token.
+    if (!isWellFormedToken(token)) throw new AppError('This download link is invalid.', 400);
+
     const { data: invite, error: fetchError } = await supabase
       .from(TABLE)
       .select('*')
@@ -74,7 +83,7 @@ export const apkDownloadService = {
         new GetObjectCommand({
           Bucket: env.r2.bucket,
           Key: env.r2.filePath,
-          ResponseContentDisposition: 'attachment; filename="app-release.apk"',
+          ResponseContentDisposition: `attachment; filename="${APK_FILE_NAME}"`,
           ResponseContentType: 'application/vnd.android.package-archive',
         }),
         { expiresIn: SIGNED_URL_EXPIRY_SECONDS }

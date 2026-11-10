@@ -53,8 +53,9 @@ export const dashboardOpsController = {
   async exportRegistry(req: Request, res: Response) {
     const { homeAddress, state, lga } = req.query as any;
     const csv = await dashboardOpsService.exportRegistryCsv({ homeAddress, state, lga });
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="registry-export.csv"');
+    const date = new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 10); // Lagos date
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="baba-isa-vanguard-registry-${date}.csv"`);
     res.status(200).send(csv);
   },
 };

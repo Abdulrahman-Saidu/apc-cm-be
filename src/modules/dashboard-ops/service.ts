@@ -1,14 +1,30 @@
 import { supabase } from '@/config/supabase';
-import { AppError } from '@/middleware/errorHandler';
+import { AppError, isInvalidIdError } from '@/middleware/errorHandler';
+import { forgetAgentStatus } from '@/middleware/requireAuth';
 
 const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000; // "active" = synced in the last 24h
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Nigeria is UTC+1 all year (no daylight saving), so days start at 00:00 Lagos time.
+const LAGOS_OFFSET_MS = 60 * 60 * 1000;
+// Supabase returns at most 1000 rows per request; bigger reads are fetched in pages.
+const FETCH_PAGE_SIZE = 1000;
 
 type Pagination = { page: number; pageSize: number };
+type RegistryFilters = { homeAddress?: string; state?: string; lga?: string };
 
-function startOfDay(d: Date) {
-    const copy = new Date(d);
-    copy.setHours(0, 0, 0, 0);
-    return copy;
+/** Start of the Lagos calendar day containing `ms`, as a UTC timestamp. */
+function lagosDayStart(ms: number): number {
+    return Math.floor((ms + LAGOS_OFFSET_MS) / DAY_MS) * DAY_MS - LAGOS_OFFSET_MS;
+}
+
+/** YYYY-MM-DD of a Lagos day start. */
+function lagosDateLabel(dayStartMs: number): string {
+    return new Date(dayStartMs + LAGOS_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Escapes % and _ so search text is matched literally inside ILIKE. */
+function likePattern(text: string): string {
+    return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
 function csvEscape(value: unknown): string {
@@ -29,46 +45,49 @@ function pageRange({ page, pageSize }: Pagination): [number, number] {
 
 export const dashboardOpsService = {
     async getOverview() {
-        const now = new Date();
-        const sevenDaysAgo = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
-        const activeSince = new Date(now.getTime() - ACTIVE_WINDOW_MS).toISOString();
+        const now = Date.now();
+        const todayStart = lagosDayStart(now);
+        const activeSince = new Date(now - ACTIVE_WINDOW_MS).toISOString();
 
-        const [{ count: total }, { count: pending }, { count: activeAgents }, { data: last7DaysRows, error: trendError }, { data: recentRows, error: recentError }] =
-            await Promise.all([
-                supabase.from('registrations').select('id', { count: 'exact', head: true }),
-                supabase.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-                supabase.from('agent_users').select('id', { count: 'exact', head: true }).gte('last_seen_at', activeSince),
-                supabase
-                    .from('registrations')
-                    .select('created_at')
-                    .gte('created_at', startOfDay(sevenDaysAgo).toISOString()),
-                supabase
-                    .from('registrations')
-                    .select('id, reg_number, full_name, status, created_at, reviewed_at, agent:agent_users(full_name, agent_code)')
-                    .order('created_at', { ascending: false })
-                    .limit(10),
-            ]);
+        // One count per day for the last 7 Lagos days. Counting in the
+        // database stays correct at any volume (row reads cap at 1000).
+        const dayStarts = Array.from({ length: 7 }, (_, k) => todayStart - (6 - k) * DAY_MS);
+        const dayCountQueries = dayStarts.map((start) =>
+            supabase
+                .from('registrations')
+                .select('id', { count: 'exact', head: true })
+                .gte('created_at', new Date(start).toISOString())
+                .lt('created_at', new Date(start + DAY_MS).toISOString())
+        );
 
-        if (trendError || recentError) throw new AppError('Failed to load overview', 500);
+        const [totalRes, pendingRes, activeRes, recentRes, ...dayRes] = await Promise.all([
+            supabase.from('registrations').select('id', { count: 'exact', head: true }),
+            supabase.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+            supabase.from('agent_users').select('id', { count: 'exact', head: true }).gte('last_seen_at', activeSince),
+            supabase
+                .from('registrations')
+                .select('id, reg_number, full_name, status, created_at, reviewed_at, agent:agent_users(full_name, agent_code)')
+                .order('created_at', { ascending: false })
+                .limit(10),
+            ...dayCountQueries,
+        ]);
 
-        const dailyCounts: { date: string; count: number }[] = [];
-        for (let i = 6; i >= 0; i--) {
-            const day = startOfDay(new Date(now.getTime() - i * 24 * 60 * 60 * 1000));
-            const dateStr = day.toISOString().slice(0, 10);
-            const count = (last7DaysRows ?? []).filter((r) => r.created_at.slice(0, 10) === dateStr).length;
-            dailyCounts.push({ date: dateStr, count });
+        if ([totalRes, pendingRes, activeRes, recentRes, ...dayRes].some((r) => r.error)) {
+            throw new AppError('Failed to load overview', 500);
         }
 
-        const todayStr = startOfDay(now).toISOString().slice(0, 10);
-        const dailyVelocity = dailyCounts.find((d) => d.date === todayStr)?.count ?? 0;
+        const dailyCounts = dayStarts.map((start, k) => ({
+            date: lagosDateLabel(start),
+            count: dayRes[k].count ?? 0,
+        }));
 
         return {
-            totalRegistrations: total ?? 0,
-            pendingRegistrations: pending ?? 0,
-            activeAgents: activeAgents ?? 0,
-            dailyVelocity,
+            totalRegistrations: totalRes.count ?? 0,
+            pendingRegistrations: pendingRes.count ?? 0,
+            activeAgents: activeRes.count ?? 0,
+            dailyVelocity: dailyCounts[dailyCounts.length - 1].count,
             dailyCounts,
-            recentActivity: recentRows,
+            recentActivity: recentRes.data,
         };
     },
 
@@ -83,16 +102,17 @@ export const dashboardOpsService = {
 
         if (error) throw new AppError('Failed to load agents', 500);
 
-        const ids = (agents ?? []).map((a) => a.id);
-        const { data: regCounts, error: countError } = ids.length
-            ? await supabase.from('registrations').select('agent_id').in('agent_id', ids)
-            : { data: [], error: null };
-        if (countError) throw new AppError('Failed to load agent stats', 500);
+        // Count in the database, one small query per agent on this page
+        // (at most 100). Reading rows to count them stops at 1000 rows.
+        const counts = await Promise.all(
+            (agents ?? []).map((a) =>
+                supabase.from('registrations').select('id', { count: 'exact', head: true }).eq('agent_id', a.id)
+            )
+        );
+        if (counts.some((c) => c.error)) throw new AppError('Failed to load agent stats', 500);
 
         const countMap = new Map<string, number>();
-        for (const row of regCounts ?? []) {
-            countMap.set(row.agent_id, (countMap.get(row.agent_id) ?? 0) + 1);
-        }
+        (agents ?? []).forEach((a, k) => countMap.set(a.id, counts[k].count ?? 0));
 
         return {
             data: (agents ?? []).map((a) => ({
@@ -111,15 +131,11 @@ export const dashboardOpsService = {
     },
 
     async activateAgent(id: string) {
-        const { error } = await supabase.from('agent_users').update({ is_active: true }).eq('id', id);
-        if (error) throw new AppError('Failed to activate agent', 500);
-        return { id, status: 'active' };
+        return setAgentActive(id, true);
     },
 
     async deactivateAgent(id: string) {
-        const { error } = await supabase.from('agent_users').update({ is_active: false }).eq('id', id);
-        if (error) throw new AppError('Failed to deactivate agent', 500);
-        return { id, status: 'deactivated' };
+        return setAgentActive(id, false);
     },
 
     async updateAgentPhone(id: string, phone: string) {
@@ -130,7 +146,7 @@ export const dashboardOpsService = {
             .select('id, phone')
             .maybeSingle();
 
-        if (error) throw new AppError('Failed to update agent', 500);
+        if (error && !isInvalidIdError(error)) throw new AppError('Failed to update agent', 500);
         if (!data) throw new AppError('Agent not found', 404);
 
         return { id: data.id, phone: data.phone };
@@ -165,7 +181,7 @@ export const dashboardOpsService = {
             .select('id')
             .maybeSingle();
 
-        if (error) throw new AppError('Failed to approve registration', 500);
+        if (error && !isInvalidIdError(error)) throw new AppError('Failed to approve registration', 500);
         if (!data) throw new AppError('Registration not found or already reviewed', 409);
 
         return { id, status: 'approved' };
@@ -180,13 +196,13 @@ export const dashboardOpsService = {
             .select('id')
             .maybeSingle();
 
-        if (error) throw new AppError('Failed to reject registration', 500);
+        if (error && !isInvalidIdError(error)) throw new AppError('Failed to reject registration', 500);
         if (!data) throw new AppError('Registration not found or already reviewed', 409);
 
         return { id, status: 'rejected', reason };
     },
 
-    async listRegistry(filters: { homeAddress?: string; state?: string; lga?: string }, pagination: Pagination) {
+    async listRegistry(filters: RegistryFilters, pagination: Pagination) {
         const [from, to] = pageRange(pagination);
 
         let query = supabase
@@ -199,7 +215,7 @@ export const dashboardOpsService = {
             .order('created_at', { ascending: false })
             .range(from, to);
 
-        if (filters.homeAddress) query = query.ilike('home_address', `%${filters.homeAddress}%`);
+        if (filters.homeAddress) query = query.ilike('home_address', likePattern(filters.homeAddress));
         if (filters.state) query = query.eq('state', filters.state);
         if (filters.lga) query = query.eq('lga', filters.lga);
 
@@ -211,24 +227,35 @@ export const dashboardOpsService = {
 
     // CSV export intentionally ignores pagination — it must return the full filtered set,
     // not just one page, so it queries without .range().
-    async exportRegistryCsv(filters: { homeAddress?: string; state?: string; lga?: string }): Promise<string> {
-        let query = supabase
-            .from('registrations')
-            .select('reg_number, full_name, phone, email, nin, bvn, e_reg_number, vin, home_address, state, lga, ward, account_number, bank_name, account_name, latitude, longitude, location_label, created_at, agent:agent_users(full_name, agent_code)')
-            .eq('status', 'approved')
-            .order('created_at', { ascending: false });
+    async exportRegistryCsv(filters: RegistryFilters): Promise<string> {
+        const rows: any[] = [];
 
-        if (filters.homeAddress) query = query.ilike('home_address', `%${filters.homeAddress}%`);
-        if (filters.state) query = query.eq('state', filters.state);
-        if (filters.lga) query = query.eq('lga', filters.lga);
+        // Read the full filtered set in pages of 1000 (the per-request row
+        // cap), so large exports are complete instead of silently cut off.
+        for (let from = 0; ; from += FETCH_PAGE_SIZE) {
+            let query = supabase
+                .from('registrations')
+                .select('reg_number, full_name, phone, email, nin, bvn, e_reg_number, vin, home_address, state, lga, ward, account_number, bank_name, account_name, latitude, longitude, location_label, created_at, agent:agent_users(full_name, agent_code)')
+                .eq('status', 'approved')
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: false }) // stable order across pages
+                .range(from, from + FETCH_PAGE_SIZE - 1);
 
-        const { data: rows, error } = await query;
-        if (error) throw new AppError('Failed to load registry', 500);
+            if (filters.homeAddress) query = query.ilike('home_address', likePattern(filters.homeAddress));
+            if (filters.state) query = query.eq('state', filters.state);
+            if (filters.lga) query = query.eq('lga', filters.lga);
+
+            const { data, error } = await query;
+            if (error) throw new AppError('Failed to load registry', 500);
+
+            rows.push(...(data ?? []));
+            if (!data || data.length < FETCH_PAGE_SIZE) break;
+        }
 
         const headers = ['Reg Number', 'Full Name', 'Phone', 'Email', 'NIN', 'BVN', 'E-Reg Number', 'VIN', 'Home Address', 'State', 'LGA', 'Ward', 'Account Number', 'Bank Name', 'Account Name', 'Latitude', 'Longitude', 'Location', 'Agent', 'Registered At'];
         const lines = [headers.join(',')];
 
-        for (const r of (rows ?? []) as any[]) {
+        for (const r of rows) {
             lines.push(
                 [
                     r.reg_number,
@@ -257,6 +284,25 @@ export const dashboardOpsService = {
             );
         }
 
-        return lines.join('\n');
+        // BOM so Excel opens names with accents/special characters correctly.
+        return '\uFEFF' + lines.join('\r\n');
     },
 };
+
+async function setAgentActive(id: string, active: boolean) {
+    const { data, error } = await supabase
+        .from('agent_users')
+        .update({ is_active: active })
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+
+    if (error && !isInvalidIdError(error)) {
+        throw new AppError(active ? 'Failed to activate agent' : 'Failed to deactivate agent', 500);
+    }
+    if (!data) throw new AppError('Agent not found', 404);
+
+    // Takes effect on the agent's very next request, not after the cache expires.
+    forgetAgentStatus(id);
+    return { id, status: active ? 'active' : 'deactivated' };
+}

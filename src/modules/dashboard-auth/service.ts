@@ -3,9 +3,9 @@ import { supabase } from '@/config/supabase';
 import { brevoClient } from '@/config/brevo';
 import { env } from '@/config/env';
 import { AppError } from '@/middleware/errorHandler';
-import { hashPassword, comparePassword } from '@/utils/password';
+import { hashPassword, comparePassword, burnPasswordCheck } from '@/utils/password';
 import { generateOtpCode, hashOtp, verifyOtp, otpExpiryDate, isOtpExpired } from '@/utils/otp';
-import { signToken, signResetToken, verifyResetToken } from '@/utils/jwt';
+import { signToken, signResetToken, verifyResetToken, passwordFingerprint } from '@/utils/jwt';
 import { AdminUserRow } from '@/types/db';
 
 const MAX_OTP_ATTEMPTS = 5;
@@ -126,19 +126,30 @@ export const dashboardAuthService = {
     if (error || !verified) throw new AppError('Something went wrong. Please try again.', 500);
 
     const token = signToken({ sub: verified.id, role: 'admin', email: verified.email });
-    return { token, admin: { id: verified.id, email: verified.email, fullName: verified.full_name } };
+    return {
+      token,
+      admin: { id: verified.id, email: verified.email, fullName: verified.full_name, role: verified.role },
+    };
   },
 
   async login(email: string, password: string) {
     const admin = await findByEmail(email.toLowerCase());
-    if (!admin || !admin.password_hash) throw new AppError('Invalid email or password', 401);
-    if (!admin.is_verified) throw new AppError('Please verify your account first', 403);
+    if (!admin || !admin.password_hash) {
+      // Same work as a real check, so timing doesn't reveal which emails exist.
+      await burnPasswordCheck(password);
+      throw new AppError('Invalid email or password', 401);
+    }
 
     const valid = await comparePassword(password, admin.password_hash);
     if (!valid) throw new AppError('Invalid email or password', 401);
+    // Checked after the password, so it isn't revealed to strangers.
+    if (!admin.is_verified) throw new AppError('Please verify your account first', 403);
 
     const token = signToken({ sub: admin.id, role: 'admin', email: admin.email });
-    return { token, admin: { id: admin.id, email: admin.email, fullName: admin.full_name } };
+    return {
+      token,
+      admin: { id: admin.id, email: admin.email, fullName: admin.full_name, role: admin.role },
+    };
   },
 
   async forgotPassword(email: string) {
@@ -165,12 +176,17 @@ export const dashboardAuthService = {
       throw new AppError('Incorrect code', 400);
     }
 
-    await supabase
+    const { error: clearError } = await supabase
       .from(TABLE)
       .update({ otp_code_hash: null, otp_purpose: null, otp_expires_at: null, otp_attempts: 0 })
       .eq('id', admin.id);
+    if (clearError) throw new AppError('Something went wrong. Please try again.', 500);
 
-    const resetToken = signResetToken({ sub: admin.id, email: admin.email });
+    const resetToken = signResetToken({
+      sub: admin.id,
+      email: admin.email,
+      pwf: passwordFingerprint(admin.password_hash),
+    });
     return { resetToken };
   },
 
@@ -183,11 +199,23 @@ export const dashboardAuthService = {
     }
 
     const admin = await findById(payload.sub);
-    if (!admin) throw new AppError('Reset session expired or invalid. Please start over.', 401);
+    // Missing account, or the password already changed since the token was
+    // issued (token already used): either way the token is spent.
+    if (!admin || passwordFingerprint(admin.password_hash) !== payload.pwf) {
+      throw new AppError('Reset session expired or invalid. Please start over.', 401);
+    }
 
     const password_hash = await hashPassword(newPassword);
-    const { error } = await supabase.from(TABLE).update({ password_hash }).eq('id', admin.id);
+    const { data: updated, error } = await supabase
+      .from(TABLE)
+      .update({ password_hash })
+      .eq('id', admin.id)
+      .eq('password_hash', admin.password_hash ?? '')
+      .select('id');
     if (error) throw new AppError('Something went wrong. Please try again.', 500);
+    if (!updated || updated.length === 0) {
+      throw new AppError('Reset session expired or invalid. Please start over.', 401);
+    }
 
     return { message: 'Password reset successfully' };
   },

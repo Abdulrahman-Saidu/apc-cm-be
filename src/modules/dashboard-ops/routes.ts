@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dashboardOpsController } from './controller';
-import { validateBody, validateQuery } from '@/middleware/validate';
+import { validateBody, validateIdParam, validateQuery } from '@/middleware/validate';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { requireAuth } from '@/middleware/requireAuth';
 import { adminActionLimiter } from '@/middleware/rateLimit';
@@ -14,13 +14,13 @@ dashboardOpsRouter.use(adminActionLimiter);
 dashboardOpsRouter.get('/overview', asyncHandler(dashboardOpsController.overview));
 
 dashboardOpsRouter.get('/agents', validateQuery(agentsQuerySchema), asyncHandler(dashboardOpsController.listAgents));
-dashboardOpsRouter.patch('/agents/:id', validateBody(updateAgentSchema), asyncHandler(dashboardOpsController.updateAgent));
-dashboardOpsRouter.patch('/agents/:id/activate', asyncHandler(dashboardOpsController.activateAgent));
-dashboardOpsRouter.patch('/agents/:id/deactivate', asyncHandler(dashboardOpsController.deactivateAgent));
+dashboardOpsRouter.patch('/agents/:id', validateIdParam(), validateBody(updateAgentSchema), asyncHandler(dashboardOpsController.updateAgent));
+dashboardOpsRouter.patch('/agents/:id/activate', validateIdParam(), asyncHandler(dashboardOpsController.activateAgent));
+dashboardOpsRouter.patch('/agents/:id/deactivate', validateIdParam(), asyncHandler(dashboardOpsController.deactivateAgent));
 
 dashboardOpsRouter.get('/queue', validateQuery(queueQuerySchema), asyncHandler(dashboardOpsController.listQueue));
-dashboardOpsRouter.patch('/queue/:id/approve', asyncHandler(dashboardOpsController.approve));
-dashboardOpsRouter.patch('/queue/:id/reject', validateBody(rejectSchema), asyncHandler(dashboardOpsController.reject));
+dashboardOpsRouter.patch('/queue/:id/approve', validateIdParam(), asyncHandler(dashboardOpsController.approve));
+dashboardOpsRouter.patch('/queue/:id/reject', validateIdParam(), validateBody(rejectSchema), asyncHandler(dashboardOpsController.reject));
 
 dashboardOpsRouter.get('/registry', validateQuery(registryQuerySchema), asyncHandler(dashboardOpsController.listRegistry));
 dashboardOpsRouter.get('/registry/export', validateQuery(registryQuerySchema), asyncHandler(dashboardOpsController.exportRegistry));
