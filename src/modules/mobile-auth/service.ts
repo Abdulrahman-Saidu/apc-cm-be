@@ -5,6 +5,7 @@ import { hashPassword, comparePassword, burnPasswordCheck } from '@/utils/passwo
 import { generateOtpCode, hashOtp, verifyOtp as compareOtp, otpExpiryDate, isOtpExpired } from '@/utils/otp';
 import { signToken, signResetToken, verifyResetToken, passwordFingerprint } from '@/utils/jwt';
 import { apkDownloadService } from '@/modules/apk-download/service';
+import { LiveEvent, realtime } from '@/realtime/socket';
 
 const TABLE = 'agent_users';
 const MAX_OTP_ATTEMPTS = 5;
@@ -80,6 +81,8 @@ export const mobileAuthService = {
 
     const { downloadLink } = await apkDownloadService.createInviteToken(invitedByAdminId, agent.email);
     await brevoClient.sendAgentInviteEmail(agent.email, agent.full_name, agent.agent_code, downloadLink);
+
+    realtime.toAdmins(LiveEvent.AgentsChanged, { id: agent.id });
 
     return { agentId: agent.id, agentCode: agent.agent_code, resent: Boolean(existing) };
   },
@@ -158,6 +161,9 @@ export const mobileAuthService = {
       .update({ otp_code_hash: null, otp_purpose: null, otp_expires_at: null, otp_attempts: 0 })
       .eq('id', agent.id);
     if (clearError) throw new AppError(GENERIC_ERROR, 500);
+
+    // The agent now shows as fully registered on the dashboard.
+    realtime.toAdmins(LiveEvent.AgentsChanged, { id: agent.id });
 
     return { verified: true };
   },

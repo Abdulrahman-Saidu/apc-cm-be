@@ -1,6 +1,7 @@
 import { supabase } from '@/config/supabase';
 import { AppError, isInvalidIdError } from '@/middleware/errorHandler';
 import { forgetAgentStatus } from '@/middleware/requireAuth';
+import { LiveEvent, realtime } from '@/realtime/socket';
 
 const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000; // "active" = synced in the last 24h
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -149,6 +150,7 @@ export const dashboardOpsService = {
         if (error && !isInvalidIdError(error)) throw new AppError('Failed to update agent', 500);
         if (!data) throw new AppError('Agent not found', 404);
 
+        realtime.toAdmins(LiveEvent.AgentsChanged, { id: data.id });
         return { id: data.id, phone: data.phone };
     },
 
@@ -178,11 +180,13 @@ export const dashboardOpsService = {
             .update({ status: 'approved', reviewed_by: adminId, reviewed_at: new Date().toISOString() })
             .eq('id', id)
             .eq('status', 'pending')
-            .select('id')
+            .select('id, agent_id, reg_number, full_name')
             .maybeSingle();
 
         if (error && !isInvalidIdError(error)) throw new AppError('Failed to approve registration', 500);
         if (!data) throw new AppError('Registration not found or already reviewed', 409);
+
+        announceReview(data, 'approved');
 
         return { id, status: 'approved' };
     },
@@ -193,11 +197,13 @@ export const dashboardOpsService = {
             .update({ status: 'rejected', rejection_reason: reason, reviewed_by: adminId, reviewed_at: new Date().toISOString() })
             .eq('id', id)
             .eq('status', 'pending')
-            .select('id')
+            .select('id, agent_id, reg_number, full_name')
             .maybeSingle();
 
         if (error && !isInvalidIdError(error)) throw new AppError('Failed to reject registration', 500);
         if (!data) throw new AppError('Registration not found or already reviewed', 409);
+
+        announceReview(data, 'rejected', reason);
 
         return { id, status: 'rejected', reason };
     },
@@ -304,5 +310,24 @@ async function setAgentActive(id: string, active: boolean) {
 
     // Takes effect on the agent's very next request, not after the cache expires.
     forgetAgentStatus(id);
+
+    realtime.toAdmins(LiveEvent.AgentsChanged, { id });
+    // A deactivated agent is signed out on every device that is online now.
+    if (!active) realtime.signOutAgent(id);
+
     return { id, status: active ? 'active' : 'deactivated' };
+}
+
+type ReviewedRow = { id: string; agent_id: string | null; reg_number: string | null; full_name: string | null };
+
+function announceReview(row: ReviewedRow, status: 'approved' | 'rejected', reason?: string) {
+    const payload = {
+        id: row.id,
+        regNumber: row.reg_number,
+        fullName: row.full_name,
+        status,
+        ...(reason ? { reason } : {}),
+    };
+    realtime.toAdmins(LiveEvent.RegistrationReviewed, payload);
+    if (row.agent_id) realtime.toAgent(row.agent_id, LiveEvent.RegistrationReviewed, payload);
 }

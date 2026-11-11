@@ -23,7 +23,7 @@ export function forgetAgentStatus(agentId: string): void {
   agentStatusCache.delete(agentId);
 }
 
-async function isAgentActive(agentId: string): Promise<boolean> {
+export async function isAgentActive(agentId: string): Promise<boolean> {
   const cached = agentStatusCache.get(agentId);
   if (cached && cached.expiresAt > Date.now()) return cached.active;
 

@@ -1,6 +1,7 @@
 import { app } from './app';
 import { env } from '@/config/env';
 import { startKeepAlive, stopKeepAlive } from '@/jobs/keepAlive';
+import { initRealtime, realtime } from '@/realtime/socket';
 import { logger } from '@/utils/logger';
 
 const server = app.listen(env.port, () => {
@@ -14,6 +15,9 @@ const server = app.listen(env.port, () => {
 server.keepAliveTimeout = 65_000;
 server.headersTimeout = 66_000;
 
+// Live updates share the same port as the REST API.
+initRealtime(server);
+
 let shuttingDown = false;
 
 function shutdown(signal: string) {
@@ -22,6 +26,8 @@ function shutdown(signal: string) {
 
   logger.info('Shutting down', { signal });
   stopKeepAlive();
+  // Open WebSockets would otherwise keep server.close() waiting.
+  realtime.disconnectAll();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }

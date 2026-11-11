@@ -1,6 +1,7 @@
 import { supabase } from '@/config/supabase';
 import { AppError, isInvalidIdError } from '@/middleware/errorHandler';
 import { RegistrationRow, RegistrationStatus } from '@/types/db';
+import { LiveEvent, realtime } from '@/realtime/socket';
 import { reverseGeocode } from '@/utils/geocoding';
 
 type RegistrationInput = {
@@ -117,6 +118,13 @@ export const mobileRegistrationsService = {
 
     await touchLastSeen(agentId);
 
+    realtime.toAdmins(LiveEvent.RegistrationCreated, {
+      id: row.id,
+      regNumber: row.reg_number,
+      fullName: data.fullName,
+      agentId,
+    });
+
     return row;
   },
 
@@ -150,6 +158,8 @@ export const mobileRegistrationsService = {
 
     await touchLastSeen(agentId);
 
+    realtime.toAdmins(LiveEvent.RegistrationUpdated, { id: rows[0].id, regNumber: rows[0].reg_number, agentId });
+
     return rows[0];
   },
 
@@ -182,6 +192,9 @@ export const mobileRegistrationsService = {
     }
 
     await touchLastSeen(agentId);
+
+    const saved = results.filter((r) => r.success).length;
+    if (saved > 0) realtime.toAdmins(LiveEvent.RegistrationsSynced, { count: saved, agentId });
 
     return results;
   },
